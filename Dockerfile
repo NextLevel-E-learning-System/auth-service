@@ -1,6 +1,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
+# Instala dependências (bcryptjs puro, evita build nativo do bcrypt)
 RUN npm install
 COPY tsconfig.json ./
 COPY src ./src

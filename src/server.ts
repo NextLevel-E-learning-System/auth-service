@@ -4,7 +4,7 @@ import pino from 'pino';
 import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { withClient } from './db';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
