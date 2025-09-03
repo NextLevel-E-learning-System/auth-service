@@ -1,18 +1,52 @@
 {
   "openapi": "3.0.3",
-  "info": { "title": "Auth Service API", "version": "1.0.0" },
+  "info": { "title": "Auth Service API", "version": "1.0.1", "description": "Emite e gerencia JWT (HS256) derivados de SHA256(JWT_SECRET)." },
   "paths": {
-    "/auth/v1/login": { "post": { "summary": "Login", "tags": ["auth"], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginInput" } } } }, "responses": { "200": { "description": "Tokens emitidos", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthTokens" } } } }, "401": { "description": "Credenciais inválidas" } } } },
-    "/auth/v1/register": { "post": { "summary": "Autocadastro", "tags": ["auth"], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterInput" } } } }, "responses": { "201": { "description": "Criado" }, "409": { "description": "Duplicado" } } } },
-  "/auth/v1/logout": { "post": { "summary": "Logout (invalida token atual ou todos)", "tags": ["auth"], "security": [{ "bearerAuth": [] }], "parameters": [ { "name":"x-invalidate-all", "in":"header", "schema": { "type":"boolean" }, "required": false, "description":"Se true, invalida todos os tokens ativos do usuário" } ], "responses": { "200": { "description": "OK" }, "401": { "description": "Token ausente" } } } },
-    "/auth/v1/refresh": { "post": { "summary": "Rotaciona refresh token e retorna novo par", "tags": ["auth"], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RefreshInput" } } } }, "responses": { "200": { "description": "Novo par de tokens", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthTokens" } } } }, "401": { "description": "Refresh inválido" } } } }
+    "/auth/v1/login": {
+      "post": {
+        "summary": "Login",
+        "tags": ["auth"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginInput" }, "example": { "email": "admin@nextlevel.com", "senha": "ADM2025" } } } },
+        "responses": {
+          "200": { "description": "Tokens emitidos", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthTokens" }, "example": { "accessToken": "<jwt_access>", "refreshToken": "<jwt_refresh>", "tokenType": "Bearer", "expiresInHours": 8 } } } },
+          "401": { "description": "Credenciais inválidas" }
+        }
+      }
+    },
+    "/auth/v1/register": {
+      "post": {
+        "summary": "Autocadastro",
+        "tags": ["auth"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterInput" }, "example": { "cpf": "12345678900", "nome": "Usuário Teste", "email": "user@nextlevel.com", "departamento": "TI", "cargo": "Dev" } } } },
+        "responses": { "201": { "description": "Criado" }, "409": { "description": "Duplicado" } }
+      }
+    },
+    "/auth/v1/logout": {
+      "post": {
+        "summary": "Logout (invalida token atual ou todos)",
+        "tags": ["auth"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [ { "name": "x-invalidate-all", "in": "header", "schema": { "type": "boolean" }, "required": false, "description": "Se true, invalida todos os tokens ativos do usuário" } ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "sucesso": { "type": "boolean" } } }, "example": { "sucesso": true } } } }, "401": { "description": "Token ausente ou inválido" } }
+      }
+    },
+    "/auth/v1/refresh": {
+      "post": {
+        "summary": "Rotaciona refresh token e retorna novo par",
+        "tags": ["auth"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RefreshInput" }, "example": { "refreshToken": "<jwt_refresh>" } } } },
+        "responses": { "200": { "description": "Novo par de tokens", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthTokens" }, "example": { "accessToken": "<novo_access>", "refreshToken": "<novo_refresh>", "tokenType": "Bearer", "expiresInHours": 8 } } } }, "401": { "description": "Refresh inválido ou expirado" } }
+      }
+    }
   },
-  "components": { "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
     "schemas": {
       "LoginInput": { "type": "object", "required": ["email", "senha"], "properties": { "email": { "type": "string", "format": "email" }, "senha": { "type": "string", "minLength": 6 } } },
       "RegisterInput": { "type": "object", "required": ["cpf", "nome", "email", "departamento", "cargo"], "properties": { "cpf": { "type": "string" }, "nome": { "type": "string" }, "email": { "type": "string", "format": "email" }, "departamento": { "type": "string" }, "cargo": { "type": "string" } } },
       "RefreshInput": { "type": "object", "required": ["refreshToken"], "properties": { "refreshToken": { "type": "string" } } },
-      "AuthTokens": { "type": "object", "properties": { "accessToken": { "type": "string" }, "refreshToken": { "type": "string" }, "tokenType": { "type": "string", "example": "Bearer" }, "expiresInHours": { "type": "integer", "example": 8 } } }
+      "AuthTokens": { "type": "object", "properties": { "accessToken": { "type": "string" }, "refreshToken": { "type": "string" }, "tokenType": { "type": "string", "example": "Bearer" }, "expiresInHours": { "type": "integer", "example": 8 } } },
+      "DecodedAccessPayload": { "type": "object", "properties": { "sub": { "type": "string" }, "email": { "type": "string" }, "status": { "type": "string" }, "roles": { "type": "array", "items": { "type": "string" } }, "type": { "type": "string", "example": "access" }, "iat": { "type": "integer" }, "exp": { "type": "integer" } } }
     }
   }
 }
