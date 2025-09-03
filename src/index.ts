@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import app from './server';
+import app from './server.js';
 // Carrega .env explicitamente (diretório fixo do serviço)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
