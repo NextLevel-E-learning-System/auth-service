@@ -94,10 +94,8 @@ export async function register(data: { email: string; }) {
   // Enviar e-mail com a senha temporária usando Gmail SMTP
   try {
     await sendRegistrationEmail({ 
-      nome: nome, 
-      email: email, 
+       email: email, 
       senha: senhaPlano, 
-      departamento: 'TI' 
     });
   } catch (emailError) {
     console.error('Erro ao enviar email:', emailError);
