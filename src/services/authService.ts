@@ -7,10 +7,7 @@ import { HttpError } from '../utils/httpError.js';
 
 function buildSigningKey() {
   const secret = process.env.JWT_SECRET || 'dev-secret';
-  // Derivação simples: SHA256(secret). Mantém requisito "JWT com SHA256 + SALT" assumindo que
-  // o próprio secret já incorpora entropia/salt (valor único forte gerado). Se quiser reforçar,
-  // gere o secret contendo partes distintas ou concatene internamente uma constante.
-  return createHash('sha256').update(secret).digest(); // 32 bytes
+  return createHash('sha256').update(secret).digest();
 }
 
 function genAccessToken(user: { id: string; email: string; status: string; roles: string[] }) {
@@ -19,10 +16,6 @@ function genAccessToken(user: { id: string; email: string; status: string; roles
   const payload = { sub: user.id, email: user.email, status: user.status, roles: user.roles, type: 'access' };
   const token = jwt.sign(payload, key, { expiresIn: `${accessExpHours}h` as any });
   const expiresAt = new Date(Date.now() + accessExpHours * 60 * 60 * 1000);
-  if (process.env.LOG_LEVEL === 'debug') {
-    // eslint-disable-next-line no-console
-    console.debug('[auth-service] genAccessToken payload', payload);
-  }
   return { token, expiresAt, accessExpHours };
 }
 
@@ -36,10 +29,6 @@ function genRefreshToken(user: { id: string; email: string; status: string; role
   const payload = { sub: user.id, email: user.email, status: user.status, roles: user.roles, type: 'refresh' };
   const token = jwt.sign(payload, key, { expiresIn: `${refreshExpHours}h` as any });
   const expiresAt = new Date(Date.now() + refreshExpHours * 60 * 60 * 1000);
-  if (process.env.LOG_LEVEL === 'debug') {
-    // eslint-disable-next-line no-console
-    console.debug('[auth-service] genRefreshToken payload', payload);
-  }
   return { token, expiresAt, refreshExpHours };
 }
 
@@ -83,10 +72,8 @@ export async function logout(authorizationHeader?: string, invalidateAll?: boole
   if (!authorizationHeader) throw new HttpError(401, 'authorization_header_required');
   const token = authorizationHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) throw new HttpError(401, 'authorization_header_required');
-  // Tentar extrair sub mesmo que expirado: usamos verify normal; se expirado, tentar decode.
   let userId: string | null = null;
   try {
-  // usar mesma chave derivada para coerência com geração
   const payload: any = jwt.verify(token, buildSigningKey());
     userId = payload.sub;
   } catch (e: any) {
