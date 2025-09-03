@@ -25,7 +25,8 @@ export async function registerHandler(req: Request, res: Response, next: NextFun
 
 export async function logoutHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await logout(req.header('authorization'));
+    const invalidateAll = req.header('x-invalidate-all') === 'true';
+    const result = await logout(req.header('authorization'), invalidateAll);
     res.json(result);
   } catch (err) { next(err); }
 }

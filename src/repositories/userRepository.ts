@@ -7,6 +7,13 @@ export async function findUserByEmail(email: string) {
   });
 }
 
+export async function findUserById(id: string) {
+  return withClient(async c => {
+    const r = await c.query('select id, email, senha_hash, tipo_usuario, status from usuarios where id=$1', [id]);
+    return r.rows[0];
+  });
+}
+
 export async function createUser(id: string, email: string, senhaHash: string) {
   await withClient(c => c.query('insert into usuarios (id, email, senha_hash, tipo_usuario, status) values ($1,$2,$3,$4,$5)', [id, email, senhaHash, 'FUNCIONARIO', 'ATIVO']));
 }
