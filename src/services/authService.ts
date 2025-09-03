@@ -73,17 +73,14 @@ export async function register(data: { email: string; }) {
   
   // Hash da senha com bcrypt cost 12
   const hashPwd = await bcrypt.hash(senhaPlano, 12);
-
-  // Nome temporário baseado no email (parte antes do @)
-  const nome = email.split('@')[0];
-
+ 
   try {
     // Criar usuário no auth_service com status ATIVO e tipo FUNCIONARIO
     await createUser(id, email, hashPwd);
     
     // Criar funcionário básico no user_service
-    await createEmployee(id, null, nome, email, 'TI', 'Funcionário'); // Departamento padrão TI
-    
+    await createEmployee(id, email, 'ATIVO'); // Departamento padrão TI
+
   } catch (err: any) {
     if (err.code === '23505') { // Violação de constraint única
       throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado no sistema');

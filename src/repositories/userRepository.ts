@@ -18,17 +18,10 @@ export async function createUser(id: string, email: string, senhaHash: string) {
   await withClient(c => c.query('insert into auth_service.usuarios (id, email, senha_hash, tipo_usuario, status) values ($1,$2,$3,$4,$5)', [id, email, senhaHash, 'FUNCIONARIO', 'ATIVO']));
 }
 
-export async function createEmployee(id: string, cpf: string | null, nome: string, email: string, departamento: string, cargo: string) {
-  await withClient(c => c.query('insert into user_service.funcionarios (id, cpf, nome, email, departamento_id, cargo, xp_total, nivel, status) values ($1,$2,$3,$4,$5,$6,0,$7,$8)', [id, cpf || null, nome, email, departamento, cargo, 'Iniciante', 'ATIVO']));
+export async function createEmployee(id: string, email: string, status: string) {
+  await withClient(c => c.query('insert into user_service.funcionarios (id, email, xp_total, nivel, status) values ($1,$2,0,$3,$4)', [id, email, 0, 'Iniciante', status]));
 }
-
-export async function departmentExists(codigo: string) {
-  return withClient(async c => {
-    const r = await c.query('select 1 from user_service.departamentos where codigo=$1', [codigo]);
-  return !!r.rowCount;
-  });
-}
-
+ 
 export async function updateLastAccessAndLog(id: string, ip: string, userAgent: string | null) {
   await withClient(async c => {
     await c.query('update auth_service.usuarios set ultimo_acesso=now() where id=$1', [id]);
