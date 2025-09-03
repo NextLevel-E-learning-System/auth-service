@@ -15,6 +15,7 @@ export function createServer() {
 
   // Docs
   const openapiSpec = loadOpenApi('Auth Service API');
+  app.get('/openapi.json', (_req,res)=> res.json(openapiSpec));
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
   // Core routes
