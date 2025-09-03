@@ -21,14 +21,14 @@ function buildTransporter() {
 }
 
 export async function sendMail(to: string, subject: string, text: string, html?: string) {
-  const from = process.env.SMTP_FROM || 'no-reply@example.com';
+  const from = process.env.SMTP_FROM;
   const t = buildTransporter();
   const info = await t.sendMail({ from, to, subject, text, html: html || `<pre>${text}</pre>` });
   return info;
 }
 
-export function buildRegistrationHtml(params: { nome: string; email: string; senha: string; departamento: string; appName?: string }) {
-  const { nome, email, senha, departamento, appName } = params;
+export function buildRegistrationHtml(params: { email: string; senha: string; appName?: string }) {
+  const { email, senha, appName } = params;
   const title = appName || 'NextLevel E-learning System';
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8" /><title>Bem-vindo(a) - ${title}</title>
     <style>
@@ -67,10 +67,10 @@ export function buildRegistrationHtml(params: { nome: string; email: string; sen
     </div></body></html>`;
 }
 
-export async function sendRegistrationEmail(params: { nome: string; email: string; senha: string; departamento: string }) {
+export async function sendRegistrationEmail(params: {  email: string; senha: string; }) {
   const html = buildRegistrationHtml({ ...params, appName: process.env.APP_NAME || 'NextLevel E-learning System' });
-  const text = `🎓 Bem-vindo(a) ao NextLevel E-learning System!\n\nOlá ${params.nome}!\n\nSua conta foi criada com sucesso.\n\n🔐 Senha temporária: ${params.senha}\n\n📧 Email: ${params.email}\n🏢 Departamento: ${params.departamento}\n🎯 Nível inicial: Iniciante\n⭐ XP inicial: 0 pontos\n\n⚠️ Por segurança, altere sua senha após o primeiro acesso.\n\nSe você não solicitou este cadastro, ignore este e-mail.\n\n---\nNextLevel E-learning System\n© ${new Date().getFullYear()}`;
-  
+  const text = `🎓 Bem-vindo(a) ao NextLevel E-learning System!\n\nSua conta foi criada com sucesso.\n\n🔐 Senha: ${params.senha}\n\n📧 Email: ${params.email}\n\nSe você não solicitou este cadastro, ignore este e-mail.\n\n---\nNextLevel E-learning System\n© ${new Date().getFullYear()}`;
+
   return sendMail(
     params.email, 
     `🎓 Bem-vindo(a) ao NextLevel E-learning - Acesso Liberado`, 
