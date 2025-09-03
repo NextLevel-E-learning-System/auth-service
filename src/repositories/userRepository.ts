@@ -1,4 +1,4 @@
-import { withClient } from '../db.js';
+import { withClient } from '../database/db.js';
 
 export async function findUserByEmail(email: string) {
   return withClient(async c => {

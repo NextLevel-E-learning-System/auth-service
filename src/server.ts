@@ -7,7 +7,6 @@ import swaggerUi from 'swagger-ui-express';
 import { authRouter } from './routes/authRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
-export function createServer() {
   const app = express();
   app.use(express.json());
   const allowAll = process.env.ALLOW_ALL_ORIGINS === 'true';
@@ -28,5 +27,5 @@ export function createServer() {
 
   // Error handler
   app.use(errorHandler);
-  return app;
-}
+
+  export default app;
