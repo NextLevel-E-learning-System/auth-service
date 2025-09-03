@@ -1,6 +1,10 @@
 {
   "openapi": "3.0.3",
-  "info": { "title": "Auth Service API", "version": "1.3.0", "description": "Autenticação com Access 8h + Refresh 24h (JWT HS256, chave derivada SHA256(JWT_SECRET)). Refresh token agora é enviado exclusivamente em cookie HttpOnly (secure em produção) e não aparece mais no corpo da resposta." },
+  "info": { 
+    "title": "Auth Service API", 
+    "version": "1.4.0", 
+    "description": "Serviço de autenticação com JWT. Suporte a auto-cadastro para funcionários com validação de domínio de email, geração automática de senha e envio por email. Access tokens válidos por 8h, refresh tokens por 24h. Refresh tokens enviados exclusivamente em cookies HttpOnly." 
+  },
   "paths": {
   "/auth/v1/login": {
       "post": {
@@ -15,10 +19,71 @@
     },
     "/auth/v1/register": {
       "post": {
-        "summary": "Autocadastro",
+        "summary": "Auto-cadastro de funcionário",
+        "description": "Permite que funcionários se cadastrem fornecendo apenas o email. O sistema valida o domínio, gera uma senha de 6 dígitos e envia por email. Cria automaticamente o usuário com status ATIVO e tipo FUNCIONARIO.",
         "tags": ["auth"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterInput" }, "example": { "cpf": "12345678900", "nome": "Usuário Teste", "email": "user@nextlevel.com", "departamento": "TI", "cargo": "Dev" } } } },
-        "responses": { "201": { "description": "Criado" }, "409": { "description": "Duplicado" } }
+        "requestBody": { 
+          "required": true, 
+          "content": { 
+            "application/json": { 
+              "schema": { "$ref": "#/components/schemas/RegisterInput" }, 
+              "example": { "email": "funcionario@gmail.com" } 
+            } 
+          } 
+        },
+        "responses": { 
+          "201": { 
+            "description": "Usuário criado com sucesso", 
+            "content": { 
+              "application/json": { 
+                "schema": { "$ref": "#/components/schemas/RegisterResponse" }, 
+                "example": { 
+                  "id": "550e8400-e29b-41d4-a716-446655440000",
+                  "email": "funcionario@gmail.com", 
+                  "tipo_usuario": "FUNCIONARIO",
+                  "status": "ATIVO",
+                  "mensagem": "Usuário criado com sucesso. Senha enviada por e-mail." 
+                } 
+              } 
+            } 
+          },
+          "400": { 
+            "description": "Dados inválidos ou domínio não permitido",
+            "content": { 
+              "application/json": { 
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "dominio_invalido": {
+                    "summary": "Domínio não permitido",
+                    "value": {
+                      "error": "dominio_nao_permitido",
+                      "message": "Apenas emails dos domínios gmail.com são permitidos para auto-cadastro"
+                    }
+                  },
+                  "validation_error": {
+                    "summary": "Email inválido",
+                    "value": {
+                      "error": "validation_error",
+                      "message": "Email deve ter formato válido"
+                    }
+                  }
+                }
+              } 
+            } 
+          },
+          "409": { 
+            "description": "Email já cadastrado",
+            "content": { 
+              "application/json": { 
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "error": "email_ja_cadastrado",
+                  "message": "Este email já está cadastrado no sistema"
+                }
+              } 
+            } 
+          }
+        }
       }
     },
     "/auth/v1/logout": {
@@ -43,9 +108,65 @@
     "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
     "schemas": {
       "LoginInput": { "type": "object", "required": ["email", "senha"], "properties": { "email": { "type": "string", "format": "email" }, "senha": { "type": "string", "minLength": 6 } } },
-      "RegisterInput": { "type": "object", "required": ["cpf", "nome", "email", "departamento", "cargo"], "properties": { "cpf": { "type": "string" }, "nome": { "type": "string" }, "email": { "type": "string", "format": "email" }, "departamento": { "type": "string" }, "cargo": { "type": "string" } } },
+      "RegisterInput": { 
+        "type": "object", 
+        "required": ["email"], 
+        "properties": { 
+          "email": { 
+            "type": "string", 
+            "format": "email",
+            "description": "Email do funcionário que deve pertencer a um domínio autorizado (ex: @gmail.com)",
+            "example": "funcionario@gmail.com"
+          } 
+        },
+        "description": "Dados necessários para auto-cadastro. Apenas o email é obrigatório."
+      },
   "LegacyRefreshInput": { "type": "object", "description": "(Depreciado) Aceito apenas para compatibilidade: refreshToken no corpo. Preferir cookie.", "properties": { "refreshToken": { "type": "string" } } },
   "AuthAccessOnly": { "type": "object", "properties": { "accessToken": { "type": "string" }, "tokenType": { "type": "string", "example": "Bearer" }, "expiresInHours": { "type": "integer", "example": 8 } } },
+      "RegisterResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID único do usuário criado"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email do usuário"
+          },
+          "tipo_usuario": {
+            "type": "string",
+            "enum": ["FUNCIONARIO"],
+            "description": "Tipo do usuário, sempre FUNCIONARIO para auto-cadastro"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ATIVO"],
+            "description": "Status do usuário, sempre ATIVO para auto-cadastro"
+          },
+          "mensagem": {
+            "type": "string",
+            "description": "Mensagem informativa sobre o resultado do cadastro"
+          }
+        },
+        "description": "Resposta do auto-cadastro com informações do usuário criado"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Código do erro"
+          },
+          "message": {
+            "type": "string",
+            "description": "Mensagem detalhada do erro"
+          }
+        },
+        "description": "Estrutura padrão de resposta de erro"
+      },
       "DecodedAccessPayload": { "type": "object", "properties": { "sub": { "type": "string" }, "email": { "type": "string" }, "status": { "type": "string" }, "roles": { "type": "array", "items": { "type": "string" } }, "type": { "type": "string", "example": "access" }, "iat": { "type": "integer" }, "exp": { "type": "integer" } } }
     }
   }
