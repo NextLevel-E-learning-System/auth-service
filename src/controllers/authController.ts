@@ -19,6 +19,10 @@ export async function loginHandler(req: Request, res: Response, next: NextFuncti
       maxAge: 1000 * 60 * 60 * (parseInt(process.env.REFRESH_TOKEN_EXP_HOURS || '24', 10)),
       path: '/auth/v1'
     });
+    if (process.env.LOG_LEVEL === 'debug') {
+      // eslint-disable-next-line no-console
+      console.debug('[auth-service] Set-Cookie header (login)', res.getHeader('Set-Cookie'));
+    }
     res.json({ accessToken: result.accessToken, tokenType: result.tokenType, expiresInHours: result.expiresInHours });
   } catch (err) { next(err); }
 }
@@ -60,6 +64,10 @@ export async function refreshHandler(req: Request, res: Response, next: NextFunc
       maxAge: 1000 * 60 * 60 * (parseInt(process.env.REFRESH_TOKEN_EXP_HOURS || '24', 10)),
       path: '/auth/v1'
     });
+    if (process.env.LOG_LEVEL === 'debug') {
+      // eslint-disable-next-line no-console
+      console.debug('[auth-service] Set-Cookie header (refresh)', res.getHeader('Set-Cookie'));
+    }
     res.json({ accessToken: result.accessToken, tokenType: result.tokenType, expiresInHours: result.expiresInHours });
   } catch (err) { next(err); }
 }
