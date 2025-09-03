@@ -54,54 +54,181 @@ export function buildRegistrationHtml(params: { nome: string; email: string; sen
   const { nome, email, senha, departamento, appName, logoBase64 } = params;
   const title = appName || 'NextLevel E-learning System';
   
-  // Logo em Base64 ou fallback para emoji
-  const logoHtml = logoBase64 
-    ? `<img src="data:image/png;base64,${logoBase64}" alt="${title}" style="max-width:200px;height:auto;margin-bottom:20px;" />`
-    : `🎓 ${title}`;
+  const logoBase64Data = logoBase64 || loadLogoBase64();
   
-  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8" /><title>Bem-vindo(a) - ${title}</title>
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bem-vindo(a) ao ${title}</title>
     <style>
-      body{font-family:Arial,Helvetica,sans-serif;background:#f5f7fa;margin:0;padding:0;color:#222}
-      .container{max-width:520px;margin:32px auto;background:#fff;border-radius:10px;padding:32px;border:1px solid #e3e8ef;box-shadow:0 4px 12px rgba(0,0,0,0.05)}
-      h1{font-size:24px;margin:0 0 16px;color:#2a4365;text-align:center}
-      .logo{text-align:center;margin-bottom:30px}
-      .logo img{max-width:200px;height:auto;display:block;margin:0 auto}
-      p{line-height:1.6;margin:0 0 16px;color:#4a5568}
-      .senha-box{font-size:32px;letter-spacing:6px;font-weight:700;background:#1a365d;color:#fff;padding:20px;text-align:center;border-radius:8px;margin:24px 0;font-family:'Courier New',monospace;border:3px solid #2d3748}
-      .meta{font-size:14px;color:#555;margin-top:24px;background:#f7fafc;padding:16px;border-radius:6px;border-left:4px solid #4299e1}
-      .badge{display:inline-block;background:#edf2f7;color:#2a4365;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;margin:2px 4px 2px 0}
-      .footer{font-size:12px;color:#666;margin-top:32px;text-align:center;border-top:1px solid #eee;padding-top:16px}
-      .warning{background:#fed7d7;color:#c53030;padding:12px;border-radius:6px;margin:16px 0;border-left:4px solid #e53e3e}
-      a{color:#2b6cb0;text-decoration:none}
-      .btn{display:inline-block;background:#4299e1;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin:16px 0}
-    </style></head><body>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            text-align: center;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .logo img {
+            max-height: 160px;
+        }
+        .content {
+            padding: 20px 30px;
+        }
+        .welcome-text {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .credentials-box {
+            background-color: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 30px 0;
+        }
+        .credential-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .credential-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .credential-label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+        .credential-value {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            background-color: #ffffff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            font-size: 14px;
+            color: #212529;
+            font-weight: 500;
+        }
+        .instructions {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #1976d2;
+            font-size: 16px;
+        }
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+            color: #424242;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 30px;
+            text-align: center;
+            border-top: 1px solid #e9ecef;
+        }
+        .footer p {
+            margin: 0;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            .header {
+                padding: 30px 20px;
+            }
+            .content {
+                padding: 30px 20px;
+            }
+            .credential-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .credential-value {
+                width: 100%;
+                box-sizing: border-box;
+            }
+        }
+    </style>
+</head>
+<body>
     <div class="container">
-      <div class="logo">${logoHtml}</div>
-      <h1>Bem-vindo(a), ${nome.split(' ')[0]}!</h1>
-      <p>Seu acesso à plataforma <strong>${title}</strong> foi criado com sucesso.</p>
-      
-      <div class="meta">
-        <strong>📋 Dados da Conta:</strong><br/>
-        <span class="badge">📧 Email</span> ${email}<br/>
-        <span class="badge">🏢 Departamento</span> ${departamento}<br/>
-        <span class="badge">🎯 Nível</span> Iniciante<br/>
-        <span class="badge">⭐ XP Inicial</span> 0 pontos
-      </div>
-      
-      <p><strong>🔐 Use a senha abaixo para fazer seu login:</strong></p>
-      <div class="senha-box">${senha}</div>
-          
-      <p>Após o login, você terá acesso a todos os cursos e recursos da plataforma de treinamento.</p>
-      
-      <div class="footer">
-        <p>Se você não solicitou este cadastro, ignore este e-mail ou contate o suporte.</p>
-        <p>&copy; ${new Date().getFullYear()} ${title}. Todos os direitos reservados.</p>
-      </div>
-    </div></body></html>`;
+        <div class="header">
+            <div class="logo">
+                ${logoBase64Data ? `<img src="data:image/png;base64,${logoBase64Data}" alt="Logo">` : ''}
+            </div>
+
+        </div>
+        
+        <div class="content">
+            <div class="welcome-text">
+                Olá <strong>${nome.split(' ')[0]}</strong>! 👋<br>
+               <p>Seu acesso à plataforma <strong>${title}</strong> foi criado com sucesso.</p> <br>
+               <p>Abaixo estão suas credenciais de acesso:</p>
+            </div>
+            
+            <div class="credentials-box">
+                <div class="credential-item">
+                    <span class="credential-label">📧 Email:</span>
+                    <span class="credential-value">${email}</span>
+                </div>
+                <div class="credential-item">
+                    <span class="credential-label">🔑 Senha:</span>
+                    <span class="credential-value">${senha}</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} ${title}. Este é um email automático, não responda.</p>
+        <p>Se você não solicitou esta conta, ignore este e-mail ou contate o suporte.</p>
+        </div>
+    </div>
+</body>
+</html>`;
 }
 
 export async function sendRegistrationEmail(params: { nome: string; email: string; senha: string; departamento: string; }) {
-  const logoBase64 = loadLogoBase64(); // Carrega a logo automaticamente
+  const logoBase64 = loadLogoBase64();
   const html = buildRegistrationHtml({ 
     ...params, 
     appName: process.env.APP_NAME || 'NextLevel E-learning System',
