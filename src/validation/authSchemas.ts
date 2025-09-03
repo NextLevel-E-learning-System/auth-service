@@ -8,3 +8,5 @@ export const registerSchema = z.object({
   departamento: z.string().min(2),
   cargo: z.string().min(2)
 });
+
+export const refreshSchema = z.object({ refreshToken: z.string().min(10) });

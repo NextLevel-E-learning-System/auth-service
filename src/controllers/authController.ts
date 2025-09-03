@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { loginSchema, registerSchema } from '../validation/authSchemas.js';
-import { login, register, logout } from '../services/authService.js';
+import { login, register, logout, refresh } from '../services/authService.js';
 import { HttpError } from '../utils/httpError.js';
 
 export async function loginHandler(req: Request, res: Response, next: NextFunction) {
@@ -30,6 +30,12 @@ export async function logoutHandler(req: Request, res: Response, next: NextFunct
   } catch (err) { next(err); }
 }
 
-export function refreshHandler(_req: Request, res: Response) {
-  res.status(501).json({ error: 'nao_suportado' });
+export async function refreshHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { refreshToken } = req.body || {};
+    const uaHeader = req.headers['user-agent'] as any;
+    const ua = typeof uaHeader === 'string' ? uaHeader : (Array.isArray(uaHeader) ? (uaHeader as string[]).join(' ') : '');
+    const result = await refresh(refreshToken, req.ip, ua);
+    res.json(result);
+  } catch (err) { next(err); }
 }
