@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": { 
     "title": "Auth Service API", 
-    "version": "1.4.0", 
-    "description": "Serviço de autenticação com JWT. Suporte a auto-cadastro para funcionários com validação de domínio de email, geração automática de senha e envio por email. Access tokens válidos por 8h, refresh tokens por 24h. Refresh tokens enviados exclusivamente em cookies HttpOnly." 
+    "version": "1.5.0", 
+    "description": "Serviço de autenticação com JWT. Suporte a cadastro completo de funcionários com validação de domínio de email, geração automática de senha temporária e envio por email. Cria registro completo em auth_service e user_service. Access tokens válidos por 8h, refresh tokens por 24h. Refresh tokens enviados exclusivamente em cookies HttpOnly." 
   },
   "paths": {
   "/auth/v1/login": {
@@ -19,15 +19,21 @@
     },
     "/auth/v1/register": {
       "post": {
-        "summary": "Auto-cadastro de funcionário",
-        "description": "Permite que funcionários se cadastrem fornecendo apenas o email. O sistema valida o domínio, gera uma senha de 6 dígitos e envia por email. Cria automaticamente o usuário com status ATIVO e tipo FUNCIONARIO.",
+        "summary": "Cadastro completo de funcionário",
+        "description": "Permite o cadastro completo de funcionários fornecendo todos os dados pessoais e profissionais. O sistema valida o domínio do email, gera uma senha temporária de 6 dígitos e envia por email. Cria automaticamente o usuário com status ATIVO e tipo FUNCIONARIO no auth_service e o funcionário completo no user_service.",
         "tags": ["auth"],
         "requestBody": { 
           "required": true, 
           "content": { 
             "application/json": { 
               "schema": { "$ref": "#/components/schemas/RegisterInput" }, 
-              "example": { "email": "funcionario@gmail.com" } 
+              "example": { 
+                "nome": "João Silva",
+                "cpf": "12345678901",
+                "email": "joao.silva@gmail.com",
+                "departamento_id": "TI",
+                "cargo": "Desenvolvedor"
+              } 
             } 
           } 
         },
@@ -39,16 +45,20 @@
                 "schema": { "$ref": "#/components/schemas/RegisterResponse" }, 
                 "example": { 
                   "id": "550e8400-e29b-41d4-a716-446655440000",
-                  "email": "funcionario@gmail.com", 
+                  "nome": "João Silva",
+                  "cpf": "12345678901",
+                  "email": "joao.silva@gmail.com",
+                  "departamento_id": "TI",
+                  "cargo": "Desenvolvedor",
                   "tipo_usuario": "FUNCIONARIO",
                   "status": "ATIVO",
-                  "mensagem": "Usuário criado com sucesso. Senha enviada por e-mail." 
+                  "mensagem": "Usuário criado com sucesso. Senha temporária enviada por e-mail." 
                 } 
               } 
             } 
           },
           "400": { 
-            "description": "Dados inválidos ou domínio não permitido",
+            "description": "Dados inválidos, domínio não permitido ou departamento inexistente",
             "content": { 
               "application/json": { 
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
@@ -61,10 +71,17 @@
                     }
                   },
                   "validation_error": {
-                    "summary": "Email inválido",
+                    "summary": "Erro de validação",
                     "value": {
                       "error": "validation_error",
-                      "message": "Email deve ter formato válido"
+                      "message": ["CPF deve conter exatamente 11 dígitos", "Nome é obrigatório"]
+                    }
+                  },
+                  "departamento_invalido": {
+                    "summary": "Departamento inexistente",
+                    "value": {
+                      "error": "departamento_invalido",
+                      "message": "Departamento não encontrado"
                     }
                   }
                 }
@@ -72,13 +89,25 @@
             } 
           },
           "409": { 
-            "description": "Email já cadastrado",
+            "description": "Email ou CPF já cadastrado",
             "content": { 
               "application/json": { 
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
-                "example": {
-                  "error": "email_ja_cadastrado",
-                  "message": "Este email já está cadastrado no sistema"
+                "examples": {
+                  "email_ja_cadastrado": {
+                    "summary": "Email já existe",
+                    "value": {
+                      "error": "email_ja_cadastrado",
+                      "message": "Este email já está cadastrado no sistema"
+                    }
+                  },
+                  "cpf_ja_cadastrado": {
+                    "summary": "CPF já existe",
+                    "value": {
+                      "error": "cpf_ja_cadastrado",
+                      "message": "CPF já está cadastrado no sistema"
+                    }
+                  }
                 }
               } 
             } 
@@ -110,16 +139,40 @@
       "LoginInput": { "type": "object", "required": ["email", "senha"], "properties": { "email": { "type": "string", "format": "email" }, "senha": { "type": "string", "minLength": 6 } } },
       "RegisterInput": { 
         "type": "object", 
-        "required": ["email"], 
+        "required": ["nome", "cpf", "email", "departamento_id", "cargo"], 
         "properties": { 
+          "nome": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nome completo do funcionário",
+            "example": "João Silva"
+          },
+          "cpf": {
+            "type": "string",
+            "pattern": "^\\d{11}$",
+            "description": "CPF com 11 dígitos (apenas números)",
+            "example": "12345678901"
+          },
           "email": { 
             "type": "string", 
             "format": "email",
             "description": "Email do funcionário que deve pertencer a um domínio autorizado (ex: @gmail.com)",
-            "example": "funcionario@gmail.com"
-          } 
+            "example": "joao.silva@gmail.com"
+          },
+          "departamento_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Código do departamento (deve existir na tabela departamentos)",
+            "example": "TI"
+          },
+          "cargo": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Cargo/função do funcionário",
+            "example": "Desenvolvedor"
+          }
         },
-        "description": "Dados necessários para auto-cadastro. Apenas o email é obrigatório."
+        "description": "Dados necessários para cadastro completo do funcionário. Todos os campos são obrigatórios."
       },
   "LegacyRefreshInput": { "type": "object", "description": "(Depreciado) Aceito apenas para compatibilidade: refreshToken no corpo. Preferir cookie.", "properties": { "refreshToken": { "type": "string" } } },
   "AuthAccessOnly": { "type": "object", "properties": { "accessToken": { "type": "string" }, "tokenType": { "type": "string", "example": "Bearer" }, "expiresInHours": { "type": "integer", "example": 8 } } },
@@ -131,27 +184,43 @@
             "format": "uuid",
             "description": "ID único do usuário criado"
           },
+          "nome": {
+            "type": "string",
+            "description": "Nome completo do funcionário"
+          },
+          "cpf": {
+            "type": "string",
+            "description": "CPF do funcionário"
+          },
           "email": {
             "type": "string",
             "format": "email",
             "description": "Email do usuário"
           },
+          "departamento_id": {
+            "type": "string",
+            "description": "Código do departamento"
+          },
+          "cargo": {
+            "type": "string",
+            "description": "Cargo/função do funcionário"
+          },
           "tipo_usuario": {
             "type": "string",
             "enum": ["FUNCIONARIO"],
-            "description": "Tipo do usuário, sempre FUNCIONARIO para auto-cadastro"
+            "description": "Tipo do usuário, sempre FUNCIONARIO para cadastro"
           },
           "status": {
             "type": "string",
             "enum": ["ATIVO"],
-            "description": "Status do usuário, sempre ATIVO para auto-cadastro"
+            "description": "Status do usuário, sempre ATIVO para cadastro"
           },
           "mensagem": {
             "type": "string",
             "description": "Mensagem informativa sobre o resultado do cadastro"
           }
         },
-        "description": "Resposta do auto-cadastro com informações do usuário criado"
+        "description": "Resposta do cadastro com informações completas do usuário criado"
       },
       "ErrorResponse": {
         "type": "object",

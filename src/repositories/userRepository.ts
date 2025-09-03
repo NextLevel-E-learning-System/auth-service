@@ -18,8 +18,11 @@ export async function createUser(id: string, email: string, senhaHash: string) {
   await withClient(c => c.query('insert into auth_service.usuarios (id, email, senha_hash, tipo_usuario, status) values ($1,$2,$3,$4,$5)', [id, email, senhaHash, 'FUNCIONARIO', 'ATIVO']));
 }
 
-export async function createEmployee(id: string, email: string, status: string) {
-  await withClient(c => c.query('insert into user_service.funcionarios (id, email, xp_total, nivel, status) values ($1,$2,0,$3,$4)', [id, email, 0, 'Iniciante', status]));
+export async function createEmployee(id: string, cpf: string, nome: string, email: string, departamento_id: string, cargo: string) {
+  await withClient(c => c.query(
+    'insert into user_service.funcionarios (id, cpf, nome, email, departamento_id, cargo, xp_total, nivel, status) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)', 
+    [id, cpf, nome, email, departamento_id, cargo, 0, 'Iniciante', 'ATIVO']
+  ));
 }
  
 export async function updateLastAccessAndLog(id: string, ip: string, userAgent: string | null) {

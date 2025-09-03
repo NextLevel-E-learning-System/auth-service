@@ -49,10 +49,16 @@ export async function login(email: string, senha: string, ip: string | undefined
   return { accessToken, refreshToken, tokenType: 'Bearer', expiresInHours: accessExpHours };
 }
 
-export async function register(data: { email: string; }) {
-  const { email } = data;
+export async function register(data: { 
+  nome: string;
+  cpf: string; 
+  email: string; 
+  departamento_id: string;
+  cargo: string;
+}) {
+  const { nome, cpf, email, departamento_id, cargo } = data;
   
-  // Validar domínio do email - apenas @gmail.com permitido (configurável via env)
+  // Validar domínio do email (configurável via env)
   const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || 'gmail.com').split(',');
   const isValidDomain = allowedDomains.some(domain => email.endsWith(`@${domain.trim()}`));
   
@@ -78,12 +84,23 @@ export async function register(data: { email: string; }) {
     // Criar usuário no auth_service com status ATIVO e tipo FUNCIONARIO
     await createUser(id, email, hashPwd);
     
-    // Criar funcionário básico no user_service
-    await createEmployee(id, email, 'ATIVO'); // Departamento padrão TI
+    // Criar funcionário completo no user_service
+    await createEmployee(id, cpf, nome, email, departamento_id, cargo);
 
   } catch (err: any) {
     if (err.code === '23505') { // Violação de constraint única
-      throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado no sistema');
+      if (err.constraint?.includes('cpf')) {
+        throw new HttpError(409, 'cpf_ja_cadastrado', 'CPF já está cadastrado no sistema');
+      }
+      if (err.constraint?.includes('email')) {
+        throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado no sistema');
+      }
+      throw new HttpError(409, 'dados_duplicados', 'Dados já cadastrados no sistema');
+    }
+    if (err.code === '23503') { // Violação de foreign key
+      if (err.constraint?.includes('departamento')) {
+        throw new HttpError(400, 'departamento_invalido', 'Departamento não encontrado');
+      }
     }
     throw err;
   }
@@ -91,8 +108,10 @@ export async function register(data: { email: string; }) {
   // Enviar e-mail com a senha temporária usando Gmail SMTP
   try {
     await sendRegistrationEmail({ 
-       email: email, 
-      senha: senhaPlano, 
+      nome: nome,
+      email: email, 
+      senha: senhaPlano,
+      departamento: departamento_id
     });
   } catch (emailError) {
     console.error('Erro ao enviar email:', emailError);
@@ -108,7 +127,11 @@ export async function register(data: { email: string; }) {
 
   return { 
     id, 
+    nome,
+    cpf,
     email,
+    departamento_id,
+    cargo,
     tipo_usuario: 'FUNCIONARIO',
     status: 'ATIVO',
     mensagem: 'Usuário criado com sucesso. Senha enviada por e-mail.' 
