@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { findUserByEmail, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, getActiveToken } from '../repositories/userRepository.js';
 import { HttpError } from '../utils/httpError.js';
 
