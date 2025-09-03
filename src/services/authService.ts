@@ -1,7 +1,8 @@
 import { randomUUID, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, getActiveToken, invalidateAllTokensOfUser } from '../repositories/userRepository.js';
+import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, invalidateAllTokensOfUser, getActiveToken, storeRefreshTokenHashed, getActiveRefreshTokenByHash } from '../repositories/userRepository.js';
+import { createHash as cryptoCreateHash } from 'crypto';
 import { HttpError } from '../utils/httpError.js';
 
 function buildSigningKey() {
@@ -25,17 +26,21 @@ function genAccessToken(user: { id: string; email: string; status: string; roles
   return { token, expiresAt, accessExpHours };
 }
 
+function hash(value: string) {
+  return cryptoCreateHash('sha256').update(value).digest('hex');
+}
+
 function genRefreshToken(user: { id: string; email: string; status: string; roles: string[] }) {
-  const refreshExpDays = parseInt(process.env.REFRESH_EXP_DAYS || '30', 10);
+  const refreshExpHours = parseInt(process.env.REFRESH_TOKEN_EXP_HOURS || '24', 10);
   const key = buildSigningKey();
   const payload = { sub: user.id, email: user.email, status: user.status, roles: user.roles, type: 'refresh' };
-  const token = jwt.sign(payload, key, { expiresIn: `${refreshExpDays}d` as any });
-  const expiresAt = new Date(Date.now() + refreshExpDays * 24 * 60 * 60 * 1000);
+  const token = jwt.sign(payload, key, { expiresIn: `${refreshExpHours}h` as any });
+  const expiresAt = new Date(Date.now() + refreshExpHours * 60 * 60 * 1000);
   if (process.env.LOG_LEVEL === 'debug') {
     // eslint-disable-next-line no-console
     console.debug('[auth-service] genRefreshToken payload', payload);
   }
-  return { token, expiresAt, refreshExpDays };
+  return { token, expiresAt, refreshExpHours };
 }
 
 export async function login(email: string, senha: string, ip: string | undefined, userAgent: string | null) {
@@ -49,7 +54,7 @@ export async function login(email: string, senha: string, ip: string | undefined
   const { token: accessToken, expiresAt: accessExpiresAt, accessExpHours } = genAccessToken(userData);
   const { token: refreshToken, expiresAt: refreshExpiresAt } = genRefreshToken(userData);
   await storeToken(accessToken, usuario.id, accessExpiresAt, 'ACCESS');
-  await storeToken(refreshToken, usuario.id, refreshExpiresAt, 'REFRESH');
+  await storeRefreshTokenHashed(hash(refreshToken), usuario.id, refreshExpiresAt);
   await updateLastAccessAndLog(usuario.id, ip || '', userAgent);
   return { accessToken, refreshToken, tokenType: 'Bearer', expiresInHours: accessExpHours };
 }
@@ -75,9 +80,9 @@ export async function register(data: { cpf: string; nome: string; email: string;
 }
 
 export async function logout(authorizationHeader?: string, invalidateAll?: boolean) {
-  if (!authorizationHeader) return { sucesso: true };
+  if (!authorizationHeader) throw new HttpError(401, 'authorization_header_required');
   const token = authorizationHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token) return { sucesso: true };
+  if (!token) throw new HttpError(401, 'authorization_header_required');
   // Tentar extrair sub mesmo que expirado: usamos verify normal; se expirado, tentar decode.
   let userId: string | null = null;
   try {
@@ -102,16 +107,16 @@ export async function refresh(refreshToken: string, ip: string | undefined, user
   if (!refreshToken) throw new HttpError(400, 'refresh_token_obrigatorio');
   let payload: any;
   try {
-  payload = jwt.verify(refreshToken, buildSigningKey());
+    payload = jwt.verify(refreshToken, buildSigningKey());
   } catch {
     throw new HttpError(401, 'refresh_invalido');
   }
   if (payload.type !== 'refresh') throw new HttpError(400, 'tipo_token_incorreto');
-  const row = await getActiveToken(refreshToken, 'REFRESH');
+  const row = await getActiveRefreshTokenByHash(hash(refreshToken));
   if (!row) throw new HttpError(401, 'refresh_invalido_ou_expirado');
   if (new Date(row.data_expiracao) < new Date()) throw new HttpError(401, 'refresh_expirado');
-  // Rotação: invalidar antigo
-  await invalidateToken(refreshToken);
+  // Rotação
+  await invalidateToken(hash(refreshToken));
   const usuario = await findUserById(payload.sub);
   if (!usuario) throw new HttpError(401, 'usuario_nao_encontrado');
   if (usuario.status !== 'ATIVO') throw new HttpError(403, 'usuario_inativo');
@@ -120,7 +125,7 @@ export async function refresh(refreshToken: string, ip: string | undefined, user
   const { token: accessToken, expiresAt: accessExpiresAt, accessExpHours } = genAccessToken(userData);
   const { token: newRefreshToken, expiresAt: newRefreshExpiresAt } = genRefreshToken(userData);
   await storeToken(accessToken, usuario.id, accessExpiresAt, 'ACCESS');
-  await storeToken(newRefreshToken, usuario.id, newRefreshExpiresAt, 'REFRESH');
+  await storeRefreshTokenHashed(hash(newRefreshToken), usuario.id, newRefreshExpiresAt);
   await updateLastAccessAndLog(usuario.id, ip || '', userAgent);
   return { accessToken, refreshToken: newRefreshToken, tokenType: 'Bearer', expiresInHours: accessExpHours };
 }
