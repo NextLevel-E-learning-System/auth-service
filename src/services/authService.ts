@@ -5,15 +5,25 @@ import { findUserByEmail, createUser, createEmployee, storeToken, updateLastAcce
 import { HttpError } from '../utils/httpError.js';
 
 function genAccessToken(userId: string, roles: string[]) {
-  const accessExpHours = 8;
-  const token = jwt.sign({ sub: userId, roles, type: 'access' }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: `${accessExpHours}h` as any });
+  // Permite configurar via ACCESS_TOKEN_EXP_HOURS (fallback 8)
+  const accessExpHours = parseInt(process.env.ACCESS_TOKEN_EXP_HOURS || '8', 10);
+  const token = jwt.sign(
+    { sub: userId, roles, type: 'access' },
+    process.env.JWT_SECRET || 'dev-secret',
+    { expiresIn: `${accessExpHours}h` as any }
+  );
   const expiresAt = new Date(Date.now() + accessExpHours * 60 * 60 * 1000);
   return { token, expiresAt, accessExpHours };
 }
 
 function genRefreshToken(userId: string) {
-  const refreshExpDays = 30;
-  const token = jwt.sign({ sub: userId, type: 'refresh' }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: `${refreshExpDays}d` as any });
+  // Usa REFRESH_EXP_DAYS se definido (.env já possui), fallback 30
+  const refreshExpDays = parseInt(process.env.REFRESH_EXP_DAYS || '30', 10);
+  const token = jwt.sign(
+    { sub: userId, type: 'refresh' },
+    process.env.JWT_SECRET || 'dev-secret',
+    { expiresIn: `${refreshExpDays}d` as any }
+  );
   const expiresAt = new Date(Date.now() + refreshExpDays * 24 * 60 * 60 * 1000);
   return { token, expiresAt, refreshExpDays };
 }
