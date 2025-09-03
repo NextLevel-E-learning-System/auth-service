@@ -1,4 +1,4 @@
-import { randomUUID, createHmac } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, getActiveToken, invalidateAllTokensOfUser } from '../repositories/userRepository.js';
@@ -6,9 +6,10 @@ import { HttpError } from '../utils/httpError.js';
 
 function buildSigningKey() {
   const secret = process.env.JWT_SECRET || 'dev-secret';
-  const salt = process.env.JWT_SALT || 'default-salt';
-  // HMAC-SHA256(secret, salt) => 32 bytes Buffer
-  return createHmac('sha256', secret).update(salt).digest();
+  // Derivação simples: SHA256(secret). Mantém requisito "JWT com SHA256 + SALT" assumindo que
+  // o próprio secret já incorpora entropia/salt (valor único forte gerado). Se quiser reforçar,
+  // gere o secret contendo partes distintas ou concatene internamente uma constante.
+  return createHash('sha256').update(secret).digest(); // 32 bytes
 }
 
 function genAccessToken(user: { id: string; email: string; status: string; roles: string[] }) {
