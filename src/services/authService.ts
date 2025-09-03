@@ -2,6 +2,7 @@ import { randomUUID, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, invalidateAllTokensOfUser, getActiveToken, storeRefreshTokenHashed, getActiveRefreshTokenByHash } from '../repositories/userRepository.js';
+import { sendRegistrationEmail } from '../utils/emailService.js';
 import { createHash as cryptoCreateHash } from 'crypto';
 import { HttpError } from '../utils/httpError.js';
 
@@ -48,24 +49,75 @@ export async function login(email: string, senha: string, ip: string | undefined
   return { accessToken, refreshToken, tokenType: 'Bearer', expiresInHours: accessExpHours };
 }
 
-export async function register(data: { cpf: string; nome: string; email: string; departamento: string; cargo: string; }) {
-  const { cpf, nome, email, departamento, cargo } = data;
-  const allowed = (process.env.ALLOWED_EMAIL_DOMAINS || '').split(',').map(d => d.trim()).filter(Boolean);
-  if (allowed.length > 0) {
-    const domain = email.split('@')[1];
-    if (!allowed.includes(domain)) throw new HttpError(400, 'dominio_invalido');
+export async function register(data: { email: string; }) {
+  const { email } = data;
+  
+  // Validar domínio do email - apenas @gmail.com permitido (configurável via env)
+  const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || 'gmail.com').split(',');
+  const isValidDomain = allowedDomains.some(domain => email.endsWith(`@${domain.trim()}`));
+  
+  if (!isValidDomain) {
+    throw new HttpError(400, 'dominio_nao_permitido', `Apenas emails dos domínios ${allowedDomains.join(', ')} são permitidos para auto-cadastro`);
   }
+
+  // Verificar se email já está cadastrado no auth_service
+  const usuarioExistente = await findUserByEmail(email);
+  if (usuarioExistente) {
+    throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado no sistema');
+  }
+
   const id = randomUUID();
+  
+  // Gerar senha numérica de 6 dígitos
   const senhaPlano = Math.floor(100000 + Math.random() * 900000).toString();
-  const hash = await bcrypt.hash(senhaPlano, 12);
+  
+  // Hash da senha com bcrypt cost 12
+  const hashPwd = await bcrypt.hash(senhaPlano, 12);
+
+  // Nome temporário baseado no email (parte antes do @)
+  const nome = email.split('@')[0];
+
   try {
-    await createUser(id, email, hash);
-    await createEmployee(id, cpf, nome, email, departamento, cargo);
+    // Criar usuário no auth_service com status ATIVO e tipo FUNCIONARIO
+    await createUser(id, email, hashPwd);
+    
+    // Criar funcionário básico no user_service
+    await createEmployee(id, null, nome, email, 'TI', 'Funcionário'); // Departamento padrão TI
+    
   } catch (err: any) {
-    if (err.code === '23505') throw new HttpError(409, 'duplicado');
+    if (err.code === '23505') { // Violação de constraint única
+      throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado no sistema');
+    }
     throw err;
   }
-  return { id, email, mensagem: 'Senha enviada por e-mail (simulado)' };
+
+  // Enviar e-mail com a senha temporária usando Gmail SMTP
+  try {
+    await sendRegistrationEmail({ 
+      nome: nome, 
+      email: email, 
+      senha: senhaPlano, 
+      departamento: 'TI' 
+    });
+  } catch (emailError) {
+    console.error('Erro ao enviar email:', emailError);
+    // Não falhar o registro se o email não for enviado
+  }
+
+  // Log de acesso para registrar a criação (registra no logs_acesso)
+  try { 
+    await updateLastAccessAndLog(id, '', 'auto-register'); 
+  } catch (logError) { 
+    console.error('Erro ao registrar log:', logError);
+  }
+
+  return { 
+    id, 
+    email,
+    tipo_usuario: 'FUNCIONARIO',
+    status: 'ATIVO',
+    mensagem: 'Usuário criado com sucesso. Senha enviada por e-mail.' 
+  };
 }
 
 export async function logout(authorizationHeader?: string, invalidateAll?: boolean) {
