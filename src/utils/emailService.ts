@@ -23,31 +23,47 @@ function loadLogoBase64(): string | undefined {
 }
 
 function buildTransporter() {
-  if (transporter) return transporter;
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  if (!host || !user || !pass) {
-    throw new Error('smtp_nao_configurado');
-  }
-  transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: { user, pass },
-    tls: {
-      rejectUnauthorized: false
+    if (transporter) return transporter;
+    const host = process.env.SMTP_HOST;
+    const port = parseInt(process.env.SMTP_PORT || '587', 10);
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+    if (!host || !user || !pass) {
+        throw new Error('smtp_nao_configurado');
     }
-  });
-  return transporter;
+    const enableDebug = process.env.SMTP_DEBUG === 'true';
+    transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+        tls: {
+            rejectUnauthorized: false
+        },
+        logger: enableDebug,
+        debug: enableDebug
+    });
+    if (enableDebug) {
+        console.log('[email][transporter_created]', { host, port, user });
+    }
+    return transporter;
 }
 
 export async function sendMail(to: string, subject: string, text: string, html?: string) {
-  const from = process.env.SMTP_FROM || 'NextLevel E-learning <no-reply@nextlevel.com>';
-  const t = buildTransporter();
-  const info = await t.sendMail({ from, to, subject, text, html: html || `<pre>${text}</pre>` });
-  return info;
+    // Gmail normalmente exige remetente igual ao usuário autenticado ou alias verificado
+    const suggestedFrom = process.env.SMTP_USER ? `${process.env.SMTP_USER}` : 'no-reply@example.com';
+    const from = process.env.SMTP_FROM || suggestedFrom;
+    const t = buildTransporter();
+    try {
+        const info = await t.sendMail({ from, to, subject, text, html: html || `<pre>${text}</pre>` });
+        if (process.env.SMTP_DEBUG === 'true') {
+            console.log('[email][sent]', { to, subject, messageId: info.messageId });
+        }
+        return info;
+    } catch (err: any) {
+        console.error('[email][send_fail]', { to, subject, err: err?.message });
+        throw err;
+    }
 }
 
 export function buildRegistrationHtml(params: { nome: string; email: string; senha: string; departamento: string; appName?: string; logoBase64?: string }) {
@@ -55,176 +71,55 @@ export function buildRegistrationHtml(params: { nome: string; email: string; sen
   const title = appName || 'NextLevel E-learning System';
   
   const logoBase64Data = logoBase64 || loadLogoBase64();
-  
-  return `
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bem-vindo(a) ao ${title}</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background-color: #f5f5f5;
-            margin: 0;
-            padding: 20px;
-            line-height: 1.6;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background-color: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-        }
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px 30px;
-            text-align: center;
-        }
-        .logo {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .logo img {
-            max-height: 160px;
-        }
-        .content {
-            padding: 20px 30px;
-        }
-        .welcome-text {
-            font-size: 18px;
-            color: #333;
-            margin-bottom: 30px;
-            text-align: center;
-        }
-        .credentials-box {
-            background-color: #f8f9fa;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            padding: 25px;
-            margin: 30px 0;
-        }
-        .credential-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #e9ecef;
-        }
-        .credential-item:last-child {
-            margin-bottom: 0;
-            padding-bottom: 0;
-            border-bottom: none;
-        }
-        .credential-label {
-            font-weight: 600;
-            color: #495057;
-            font-size: 14px;
-        }
-        .credential-value {
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            background-color: #ffffff;
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: 1px solid #dee2e6;
-            font-size: 14px;
-            color: #212529;
-            font-weight: 500;
-        }
-        .instructions {
-            background-color: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 20px;
-            margin: 30px 0;
-            border-radius: 0 8px 8px 0;
-        }
-        .instructions h3 {
-            margin-top: 0;
-            color: #1976d2;
-            font-size: 16px;
-        }
-        .instructions ul {
-            margin: 10px 0;
-            padding-left: 20px;
-        }
-        .instructions li {
-            margin-bottom: 8px;
-            color: #424242;
-        }
-        .footer {
-            background-color: #f8f9fa;
-            padding: 30px;
-            text-align: center;
-            border-top: 1px solid #e9ecef;
-        }
-        .footer p {
-            margin: 0;
-            color: #6c757d;
-            font-size: 14px;
-        }
-        @media (max-width: 600px) {
-            body {
-                padding: 10px;
-            }
-            .header {
-                padding: 30px 20px;
-            }
-            .content {
-                padding: 30px 20px;
-            }
-            .credential-item {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-            }
-            .credential-value {
-                width: 100%;
-                box-sizing: border-box;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="logo">
-                ${logoBase64Data ? `<img src="data:image/png;base64,${logoBase64Data}" alt="Logo">` : ''}
+    const styles = `
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;background:#f2f4f8;margin:0;padding:22px;color:#2d3748;}
+        .shell{max-width:640px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px -4px rgba(31,41,55,.15);} 
+        .hdr{background:linear-gradient(135deg,#6366f1,#764ba2);padding:30px 34px;text-align:center;color:#fff;position:relative;}
+        .hdr .logo img{max-height:150px;}
+        h1{margin:14px 0 0;font-size:22px;letter-spacing:.5px;font-weight:600;}
+        .body{padding:34px 40px 48px;}
+        .hi{font-size:18px;margin:0 0 26px;text-align:center;}
+        .cred-wrapper{background:linear-gradient(135deg,#eef2ff,#f8f9ff);border:1px solid #e0e7ff;padding:26px 26px 18px;border-radius:16px;position:relative;margin:34px 0 42px;}
+        .cred-title{position:absolute;top:-14px;left:18px;background:#6366f1;color:#fff;padding:4px 14px;font-size:12px;border-radius:24px;font-weight:600;letter-spacing:.5px;box-shadow:0 2px 6px rgba(0,0,0,.15);} 
+        .cred-grid{display:flex;flex-direction:column;gap:18px;margin-top:10px;}
+        .cred-item{display:flex;flex-direction:column;gap:6px;}
+        .label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:#4a5568;}
+        .val{background:#fff;border:1px solid #d9e2ef;border-radius:10px;padding:10px 14px;font-family:'Monaco','Menlo','Ubuntu Mono',monospace;font-size:15px;color:#1a202c;font-weight:600;display:inline-block;min-width:120px;}
+        .pwd-badge{background:linear-gradient(135deg,#ffb347,#ff7b54);color:#fff;border:none;box-shadow:0 4px 14px -4px rgba(0,0,0,.25);}
+        .note{font-size:13px;line-height:1.5;margin-top:10px;color:#4a5568;}
+        .separator{height:1px;background:linear-gradient(90deg,rgba(99,102,241,0),rgba(99,102,241,.5),rgba(99,102,241,0));margin:40px 0 30px;border:0;}
+        .footer{background:#f8fafc;padding:30px 34px;text-align:center;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;}
+        @media(max-width:640px){body{padding:14px}.body{padding:32px 24px 46px}.cred-wrapper{padding:24px 20px 14px}.val{width:100%;box-sizing:border-box}}
+    `;
+    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title} - Acesso Criado</title><style>${styles}</style></head><body>
+        <div class="shell">
+            <div class="hdr">
+                <div class="logo">${logoBase64Data ? `<img src="data:image/png;base64,${logoBase64Data}" alt="Logo"/>` : ''}</div>
+                <h1>Bem-vindo(a)</h1>
             </div>
-
-        </div>
-        
-        <div class="content">
-            <div class="welcome-text">
-                Olá <strong>${nome.split(' ')[0]}</strong>! 👋<br>
-               <p>Seu acesso à plataforma <strong>${title}</strong> foi criado com sucesso.</p> <br>
-               <p>Abaixo estão suas credenciais de acesso:</p>
-            </div>
-            
-            <div class="credentials-box">
-                <div class="credential-item">
-                    <span class="credential-label">📧 Email:</span>
-                    <span class="credential-value">${email}</span>
+            <div class="body">
+                <p class="hi">Olá <strong>${nome.split(' ')[0]}</strong> 👋<br/>Sua conta em <strong>${title}</strong> foi criada com sucesso.</p>
+                <div class="cred-wrapper">
+                    <span class="cred-title">CREDENCIAIS INICIAIS</span>
+                    <div class="cred-grid">
+                        <div class="cred-item">
+                            <span class="label">Email</span>
+                            <span class="val">${email}</span>
+                        </div>
+                        <div class="cred-item">
+                            <span class="label">Senha </span>
+                            <span class="val pwd-badge">${senha}</span>
+                        </div>
+                    </div>
+                    <div class="note">Use esta senha para o primeiro acesso e altere imediatamente por uma senha forte. Não compartilhe suas credenciais.</div>
                 </div>
-                <div class="credential-item">
-                    <span class="credential-label">🔑 Senha:</span>
-                    <span class="credential-value">${senha}</span>
-                </div>
+                <p style="font-size:13px;color:#4a5568;margin:0 0 22px;">Departamento informado: <strong>${departamento}</strong> | Nível inicial: <strong>Iniciante</strong> | XP: <strong>0</strong></p>
+                <hr class="separator"/>
+                <p style="font-size:12px;color:#718096;margin:0;">Se você não solicitou este cadastro, ignore este e-mail.</p>
             </div>
+            <div class="footer">&copy; ${new Date().getFullYear()} ${title}. Email automático - não responda.</div>
         </div>
-        
-        <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} ${title}. Este é um email automático, não responda.</p>
-        <p>Se você não solicitou esta conta, ignore este e-mail ou contate o suporte.</p>
-        </div>
-    </div>
-</body>
-</html>`;
+    </body></html>`;
 }
 
 export async function sendRegistrationEmail(params: { nome: string; email: string; senha: string; departamento: string; }) {
@@ -244,72 +139,11 @@ export async function sendRegistrationEmail(params: { nome: string; email: strin
   );
 }
 
-// ======================= RESET PASSWORD =========================
-export function buildResetPasswordHtml(params: { nome: string; email: string; novaSenha: string; appName?: string; logoBase64?: string }) {
-    const { nome, email, novaSenha, appName, logoBase64 } = params;
-    const title = appName || 'NextLevel E-learning System';
-    const logoBase64Data = logoBase64 || loadLogoBase64();
-    return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Redefinição de Senha - ${title}</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont,'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background:#f4f6f8; margin:0; padding:24px; color:#333; }
-        .card { max-width:620px; margin:0 auto; background:#fff; border-radius:14px; box-shadow:0 6px 28px rgba(0,0,0,0.08); overflow:hidden; }
-        .header { background:linear-gradient(135deg,#ff8a05,#ff4800); padding:28px 30px; text-align:center; color:#fff; }
-        .logo img { max-height:120px; }
-        h1 { margin:0; font-size:22px; letter-spacing:.5px; }
-        .content { padding:32px 36px 40px; }
-        .hi { font-size:17px; margin:0 0 22px; }
-        .warn { background:#fff3cd; border-left:5px solid #ff9800; padding:14px 18px; border-radius:8px; font-size:14px; line-height:1.5; margin:26px 0; }
-        .credentials { background:#f1f5f9; border:1px solid #e2e8f0; padding:26px 24px 10px; border-radius:10px; margin:30px 0 34px; }
-        .kv { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid #e2e8f0; }
-        .kv:last-child { margin-bottom:0; padding-bottom:0; border-bottom:none; }
-        .k { font-size:12px; font-weight:600; text-transform:uppercase; color:#475569; letter-spacing:.5px; }
-        .v { font-family:'Monaco','Menlo','Ubuntu Mono',monospace; background:#fff; padding:8px 14px; border-radius:6px; border:1px solid #cbd5e1; font-size:15px; font-weight:500; color:#1e293b; }
-        .steps { background:#eef6ff; border:1px solid #b6dcff; padding:22px 24px 10px; border-radius:10px; }
-        .steps h3 { margin:0 0 12px; font-size:15px; color:#0b62c1; }
-        .steps ol { margin:0 0 4px 18px; padding:0; }
-        .steps li { margin:0 0 10px; font-size:14px; }
-        .footer { background:#f8fafc; padding:26px 26px 32px; text-align:center; font-size:12px; color:#64748b; border-top:1px solid #e2e8f0; }
-        .small-note { font-size:12px; color:#475569; margin-top:14px; }
-        @media (max-width:640px){ body { padding:14px; } .content { padding:30px 24px 34px; } .kv{ flex-direction:column; align-items:flex-start; gap:8px; } .v{ width:100%; box-sizing:border-box; } }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="header">
-            <div class="logo">${logoBase64Data ? `<img src="data:image/png;base64,${logoBase64Data}" alt="Logo" />` : ''}</div>
-            <h1>Redefinição de Senha</h1>
-        </div>
-        <div class="content">
-            <p class="hi">Olá <strong>${nome}</strong>, sua senha foi redefinida com sucesso.</p>
-            <div class="warn">Se você <strong>não</strong> solicitou esta redefinição, altere a senha imediatamente após acessar e informe a equipe de suporte.</div>
-            <div class="credentials">
-                <div class="kv"><span class="k">Email</span><span class="v">${email}</span></div>
-                <div class="kv"><span class="k">Nova Senha </span><span class="v">${novaSenha}</span></div>
-            </div>
-            <div class="steps">
-                <h3>Próximos passos recomendados:</h3>
-                <ol>
-                    <li>Acesse a plataforma e autentique-se com a senha .</li>
-                    <li>Altere a senha imediatamente para uma senha forte e única.</li>
-                    <li>Nunca compartilhe suas credenciais e evite reutilizar senhas.</li>
-                </ol>
-            </div>
-            <p class="small-note">Esta senha é . Após o primeiro login, personalize-a para maior segurança.</p>
-        </div>
-        <div class="footer">&copy; ${new Date().getFullYear()} ${title}. Este é um email automático, não responda.</div>
-    </div>
-</body>
-</html>`;
+// -------- Reset reutilizando layout: muda apenas título do badge e assunto --------
+export async function sendPasswordResetEmail(params: { nome: string; email: string; novaSenha: string; }) {
+    // Reutiliza buildRegistrationHtml passando departamento 'N/D'
+    const html = buildRegistrationHtml({ nome: params.nome, email: params.email, senha: params.novaSenha, departamento: 'N/D', appName: process.env.APP_NAME || 'NextLevel E-learning System', logoBase64: loadLogoBase64() });
+    const text = `🔐 Reset de Senha - NextLevel\n\nOlá ${params.nome}, sua senha foi redefinida.\nNova senha : ${params.novaSenha}\nAltere após o primeiro login.\n\n— NextLevel E-learning System`;
+    return sendMail(params.email, '🔐 Reset de Senha - Nova Senha ', text, html);
 }
 
-export async function sendResetPasswordEmail(params: { nome: string; email: string; novaSenha: string; }) {
-    const logoBase64 = loadLogoBase64();
-    const html = buildResetPasswordHtml({ ...params, appName: process.env.APP_NAME || 'NextLevel E-learning System', logoBase64 });
-    const text = `🔐 Redefinição de Senha - NextLevel\n\nOlá ${params.nome}, sua senha foi redefinida.\n\nNova senha: ${params.novaSenha}\n\nUse-a para acessar e troque imediatamente. Se você não solicitou, contate o suporte.\n\n— NextLevel E-learning System`;
-    return sendMail(params.email, '🔐 Sua senha foi redefinida', text, html);
-}

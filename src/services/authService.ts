@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, invalidateAllTokensOfUser, getActiveToken, storeRefreshTokenHashed, getActiveRefreshTokenByHash, updateUserPassword } from '../repositories/authRepository.js';
-import { sendRegistrationEmail, sendResetPasswordEmail } from '../utils/emailService.js';
+import { sendRegistrationEmail, sendPasswordResetEmail } from '../utils/emailService.js';
 import { createHash as cryptoCreateHash } from 'crypto';
 import { HttpError } from '../utils/httpError.js';
 
@@ -197,7 +197,15 @@ export async function resetPassword(params: { email?: string; userId?: string; }
   const hashPwd = await bcrypt.hash(novaSenha, 12);
   await updateUserPassword(usuario.id, hashPwd);
   try { await invalidateAllTokensOfUser(usuario.id); } catch { /* ignore */ }
-  try { await sendResetPasswordEmail({ nome: usuario.email.split('@')[0], email: usuario.email, novaSenha }); } catch { /* ignore */ }
+  const nomeBase = (usuario.email && typeof usuario.email === 'string' && usuario.email.includes('@'))
+    ? usuario.email.split('@')[0]
+    : 'usuario';
+  if (!usuario.email) {
+    console.warn('[resetPassword][warn] email_inexistente_para_usuario', { userId: usuario.id });
+  }
+  try {
+    await sendPasswordResetEmail({ nome: nomeBase, email: usuario.email || email || '', novaSenha });
+  } catch (e) { console.error('[resetPassword][email_fail]', e); }
   try { await updateLastAccessAndLog(usuario.id, '', 'reset-password'); } catch { /* ignore */ }
   return { sucesso: true };
 }
