@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": { 
     "title": "Auth Service API", 
-    "version": "1.5.0", 
-    "description": "Serviço de autenticação com JWT. Suporte a cadastro completo de funcionários com validação de domínio de email, geração automática de senha temporária e envio por email. Cria registro completo em auth_service e user_service. Access tokens válidos por 8h, refresh tokens por 24h. Refresh tokens enviados exclusivamente em cookies HttpOnly." 
+    "version": "1.6.0", 
+    "description": "Serviço de autenticação com JWT. Suporte a cadastro completo de funcionários com validação de domínio de email, geração automática de senha  e envio por email. Cria registro completo em auth_service e user_service. Access tokens válidos por 8h, refresh tokens por 24h. Refresh tokens enviados exclusivamente em cookies HttpOnly. Inclui endpoint público de reset de senha que gera nova senha  e invalida todos os tokens ativos." 
   },
   "paths": {
   "/auth/v1/login": {
@@ -20,7 +20,7 @@
     "/auth/v1/register": {
       "post": {
         "summary": "Cadastro completo de funcionário",
-        "description": "Permite o cadastro completo de funcionários fornecendo todos os dados pessoais e profissionais. O sistema valida o domínio do email, gera uma senha temporária de 6 dígitos e envia por email. Cria automaticamente o usuário com status ATIVO e tipo FUNCIONARIO no auth_service e o funcionário completo no user_service.",
+        "description": "Permite o cadastro completo de funcionários fornecendo todos os dados pessoais e profissionais. O sistema valida o domínio do email, gera uma senha  de 6 dígitos e envia por email. Cria automaticamente o usuário com status ATIVO e tipo FUNCIONARIO no auth_service e o funcionário completo no user_service.",
         "tags": ["auth"],
         "requestBody": { 
           "required": true, 
@@ -52,7 +52,7 @@
                   "cargo": "Desenvolvedor",
                   "tipo_usuario": "FUNCIONARIO",
                   "status": "ATIVO",
-                  "mensagem": "Usuário criado com sucesso. Senha temporária enviada por e-mail." 
+                  "mensagem": "Usuário criado com sucesso. Senha  enviada por e-mail." 
                 } 
               } 
             } 
@@ -124,12 +124,29 @@
         "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "sucesso": { "type": "boolean" } } }, "example": { "sucesso": true } } } }, "401": { "description": "Token ausente ou inválido" } }
       }
     },
-  "/auth/v1/refresh": {
+    "/auth/v1/refresh": {
       "post": {
         "summary": "Gera novo par (rotação do refresh atual)",
         "tags": ["auth"],
     "requestBody": { "required": false, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LegacyRefreshInput" }, "example": { } } } },
     "responses": { "200": { "description": "Novo access token (refresh rotacionado em cookie)", "headers": { "Set-Cookie": { "schema": { "type": "string", "example": "refreshToken=<novo_refresh>; Path=/auth/v1; HttpOnly; SameSite=Strict" }, "description": "Novo refresh token rotacionado" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthAccessOnly" }, "example": { "accessToken": "<novo_access>", "tokenType": "Bearer", "expiresInHours": 8 } } } }, "401": { "description": "Refresh inválido ou expirado" } }
+      }
+    },
+    "/auth/v1/reset-password": {
+      "post": {
+        "summary": "Reset de senha (público por email ou userId)",
+        "description": "Gera uma nova senha  de 6 dígitos para o usuário identificado por email ou userId, envia e-mail com template específico e invalida todos os tokens ativos (logout forçado). Não revela se o email existe (mitigação leve); respostas genéricas 200 ou 404 quando usuário não encontrado.",
+        "tags": ["auth"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordInput" }, "examples": { "por_email": { "summary": "Via email", "value": { "email": "usuario@dominio.com" } }, "por_userId": { "summary": "Via userId", "value": { "userId": "550e8400-e29b-41d4-a716-446655440000" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Senha redefinida (email enviado se usuário existir)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordResponse" }, "example": { "sucesso": true } } } },
+          "400": { "description": "Email ou userId ausente" },
+          "403": { "description": "Usuário inativo" },
+          "404": { "description": "Usuário não encontrado" }
+        }
       }
     }
   },
@@ -237,6 +254,8 @@
         "description": "Estrutura padrão de resposta de erro"
       },
       "DecodedAccessPayload": { "type": "object", "properties": { "sub": { "type": "string" }, "email": { "type": "string" }, "status": { "type": "string" }, "roles": { "type": "array", "items": { "type": "string" } }, "type": { "type": "string", "example": "access" }, "iat": { "type": "integer" }, "exp": { "type": "integer" } } }
+  ,"ResetPasswordInput": { "type": "object", "properties": { "email": { "type": "string", "format": "email" }, "userId": { "type": "string", "format": "uuid" } }, "minProperties": 1, "description": "Informe email OU userId" }
+  ,"ResetPasswordResponse": { "type": "object", "properties": { "sucesso": { "type": "boolean" } } }
     }
   }
 }

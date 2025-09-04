@@ -62,3 +62,7 @@ export async function getActiveRefreshTokenByHash(hash: string) {
 export async function invalidateAllTokensOfUser(userId: string) {
   await withClient(c => c.query('update auth_service.tokens set ativo=false where usuario_id=$1 and ativo=true', [userId]));
 }
+
+export async function updateUserPassword(userId: string, newHash: string) {
+  await withClient(c => c.query('update auth_service.usuarios set senha_hash=$1 where id=$2', [newHash, userId]));
+}

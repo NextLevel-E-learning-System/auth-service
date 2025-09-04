@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { loginSchema, registerSchema } from '../validation/authSchemas.js';
-import { login, register, logout, refresh } from '../services/authService.js';
+import { login, register, logout, refresh, resetPassword } from '../services/authService.js';
 import { HttpError } from '../utils/httpError.js';
 
 export async function loginHandler(req: Request, res: Response, next: NextFunction) {
@@ -59,5 +59,13 @@ export async function refreshHandler(req: Request, res: Response, next: NextFunc
       path: '/auth/v1'
     });
     res.json({ accessToken: result.accessToken, tokenType: result.tokenType, expiresInHours: result.expiresInHours });
+  } catch (err) { next(err); }
+}
+
+export async function resetPasswordHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { email, userId } = req.body || {};
+    const r = await resetPassword({ email, userId });
+    res.json(r);
   } catch (err) { next(err); }
 }

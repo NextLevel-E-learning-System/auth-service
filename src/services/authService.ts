@@ -1,8 +1,8 @@
 import { randomUUID, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, invalidateAllTokensOfUser, getActiveToken, storeRefreshTokenHashed, getActiveRefreshTokenByHash } from '../repositories/authRepository.js';
-import { sendRegistrationEmail } from '../utils/emailService.js';
+import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, invalidateAllTokensOfUser, getActiveToken, storeRefreshTokenHashed, getActiveRefreshTokenByHash, updateUserPassword } from '../repositories/authRepository.js';
+import { sendRegistrationEmail, sendResetPasswordEmail } from '../utils/emailService.js';
 import { createHash as cryptoCreateHash } from 'crypto';
 import { HttpError } from '../utils/httpError.js';
 
@@ -105,7 +105,7 @@ export async function register(data: {
     throw err;
   }
 
-  // Enviar e-mail com a senha temporária usando Gmail SMTP
+  // Enviar e-mail com a senha  usando Gmail SMTP
   try {
     await sendRegistrationEmail({ 
       nome: nome,
@@ -185,4 +185,19 @@ export async function refresh(refreshToken: string, ip: string | undefined, user
   await storeRefreshTokenHashed(hash(newRefreshToken), usuario.id, newRefreshExpiresAt);
   await updateLastAccessAndLog(usuario.id, ip || '', userAgent);
   return { accessToken, refreshToken: newRefreshToken, tokenType: 'Bearer', expiresInHours: accessExpHours };
+}
+
+export async function resetPassword(params: { email?: string; userId?: string; }) {
+  const { email, userId } = params;
+  if (!email && !userId) throw new HttpError(400, 'email_ou_userid_obrigatorio');
+  const usuario = email ? await findUserByEmail(email) : await findUserById(userId!);
+  if (!usuario) throw new HttpError(404, 'usuario_nao_encontrado');
+  if (usuario.status !== 'ATIVO') throw new HttpError(403, 'usuario_inativo');
+  const novaSenha = Math.floor(100000 + Math.random() * 900000).toString();
+  const hashPwd = await bcrypt.hash(novaSenha, 12);
+  await updateUserPassword(usuario.id, hashPwd);
+  try { await invalidateAllTokensOfUser(usuario.id); } catch { /* ignore */ }
+  try { await sendResetPasswordEmail({ nome: usuario.email.split('@')[0], email: usuario.email, novaSenha }); } catch { /* ignore */ }
+  try { await updateLastAccessAndLog(usuario.id, '', 'reset-password'); } catch { /* ignore */ }
+  return { sucesso: true };
 }
