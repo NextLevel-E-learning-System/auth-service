@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, invalidateAllTokensOfUser, getActiveToken, storeRefreshTokenHashed, getActiveRefreshTokenByHash } from '../repositories/userRepository.js';
+import { findUserByEmail, findUserById, createUser, createEmployee, storeToken, updateLastAccessAndLog, invalidateToken, invalidateAllTokensOfUser, getActiveToken, storeRefreshTokenHashed, getActiveRefreshTokenByHash } from '../repositories/authRepository.js';
 import { sendRegistrationEmail } from '../utils/emailService.js';
 import { createHash as cryptoCreateHash } from 'crypto';
 import { HttpError } from '../utils/httpError.js';
