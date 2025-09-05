@@ -1,26 +1,6 @@
 import nodemailer from 'nodemailer';
-import fs from 'fs';
-import path from 'path';
 
 let transporter: nodemailer.Transporter | null = null;
-
-// Função para carregar logo em Base64
-function loadLogoBase64(): string | undefined {
-  try {
-    const logoPath = path.join(__dirname, '..', 'assets', 'logo.png');
-    
-    if (fs.existsSync(logoPath)) {
-      console.log(`Logo encontrada em: ${logoPath}`);
-      const logoBuffer = fs.readFileSync(logoPath);
-      return logoBuffer.toString('base64');
-    }
-    
-    return undefined;
-  } catch (error) {
-    console.warn('Erro ao carregar a logo:', error);
-    return undefined;
-  }
-}
 
 function buildTransporter() {
     if (transporter) return transporter;
@@ -50,9 +30,7 @@ function buildTransporter() {
 }
 
 export async function sendMail(to: string, subject: string, text: string, html?: string) {
-    // Gmail normalmente exige remetente igual ao usuário autenticado ou alias verificado
-    const suggestedFrom = process.env.SMTP_USER ? `${process.env.SMTP_USER}` : 'no-reply@example.com';
-    const from = process.env.SMTP_FROM || suggestedFrom;
+    const from = 'no-reply@nextlevel.com';
     const t = buildTransporter();
     try {
         const info = await t.sendMail({ from, to, subject, text, html: html || `<pre>${text}</pre>` });
@@ -66,84 +44,77 @@ export async function sendMail(to: string, subject: string, text: string, html?:
     }
 }
 
-export function buildRegistrationHtml(params: { nome: string; email: string; senha: string; departamento: string; appName?: string; logoBase64?: string }) {
-  const { nome, email, senha, departamento, appName, logoBase64 } = params;
-  const title = appName || 'NextLevel E-learning System';
-  
-  const logoBase64Data = logoBase64 || loadLogoBase64();
-    const styles = `
-        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;background:#f2f4f8;margin:0;padding:22px;color:#2d3748;}
-        .shell{max-width:640px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px -4px rgba(31,41,55,.15);} 
-        .hdr{background:linear-gradient(135deg,#6366f1,#764ba2);padding:30px 34px;text-align:center;color:#fff;position:relative;}
-        .hdr .logo img{max-height:150px;}
-        h1{margin:14px 0 0;font-size:22px;letter-spacing:.5px;font-weight:600;}
-        .body{padding:34px 40px 48px;}
-        .hi{font-size:18px;margin:0 0 26px;text-align:center;}
-        .cred-wrapper{background:linear-gradient(135deg,#eef2ff,#f8f9ff);border:1px solid #e0e7ff;padding:26px 26px 18px;border-radius:16px;position:relative;margin:34px 0 42px;}
-        .cred-title{position:absolute;top:-14px;left:18px;background:#6366f1;color:#fff;padding:4px 14px;font-size:12px;border-radius:24px;font-weight:600;letter-spacing:.5px;box-shadow:0 2px 6px rgba(0,0,0,.15);} 
-        .cred-grid{display:flex;flex-direction:column;gap:18px;margin-top:10px;}
-        .cred-item{display:flex;flex-direction:column;gap:6px;}
-        .label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:#4a5568;}
-        .val{background:#fff;border:1px solid #d9e2ef;border-radius:10px;padding:10px 14px;font-family:'Monaco','Menlo','Ubuntu Mono',monospace;font-size:15px;color:#1a202c;font-weight:600;display:inline-block;min-width:120px;}
-        .pwd-badge{background:linear-gradient(135deg,#ffb347,#ff7b54);color:#fff;border:none;box-shadow:0 4px 14px -4px rgba(0,0,0,.25);}
-        .note{font-size:13px;line-height:1.5;margin-top:10px;color:#4a5568;}
-        .separator{height:1px;background:linear-gradient(90deg,rgba(99,102,241,0),rgba(99,102,241,.5),rgba(99,102,241,0));margin:40px 0 30px;border:0;}
-        .footer{background:#f8fafc;padding:30px 34px;text-align:center;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;}
-        @media(max-width:640px){body{padding:14px}.body{padding:32px 24px 46px}.cred-wrapper{padding:24px 20px 14px}.val{width:100%;box-sizing:border-box}}
-    `;
-    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title} - Acesso Criado</title><style>${styles}</style></head><body>
-        <div class="shell">
-            <div class="hdr">
-                <div class="logo">${logoBase64Data ? `<img src="data:image/png;base64,${logoBase64Data}" alt="Logo"/>` : ''}</div>
-                <h1>Bem-vindo(a)</h1>
-            </div>
-            <div class="body">
-                <p class="hi">Olá <strong>${nome.split(' ')[0]}</strong> 👋<br/>Sua conta em <strong>${title}</strong> foi criada com sucesso.</p>
-                <div class="cred-wrapper">
-                    <span class="cred-title">CREDENCIAIS INICIAIS</span>
-                    <div class="cred-grid">
-                        <div class="cred-item">
-                            <span class="label">Email</span>
-                            <span class="val">${email}</span>
-                        </div>
-                        <div class="cred-item">
-                            <span class="label">Senha </span>
-                            <span class="val pwd-badge">${senha}</span>
-                        </div>
-                    </div>
-                    <div class="note">Use esta senha para o primeiro acesso e altere imediatamente por uma senha forte. Não compartilhe suas credenciais.</div>
-                </div>
-                <p style="font-size:13px;color:#4a5568;margin:0 0 22px;">Departamento informado: <strong>${departamento}</strong> | Nível inicial: <strong>Iniciante</strong> | XP: <strong>0</strong></p>
-                <hr class="separator"/>
-                <p style="font-size:12px;color:#718096;margin:0;">Se você não solicitou este cadastro, ignore este e-mail.</p>
-            </div>
-            <div class="footer">&copy; ${new Date().getFullYear()} ${title}. Email automático - não responda.</div>
-        </div>
-    </body></html>`;
+// Template unificado (cadastro e reset) baseado no HTML fornecido (compatível com clientes Outlook / MSO)
+export function buildPasswordTemplate(params: { tipo: 'register' | 'reset'; nome: string; senha: string; appName?: string }) {
+    const { nome, senha, appName } = params; // tipo ignorado: mesmo corpo para ambos
+    const firstName = (nome || '').trim().split(/\s+/)[0];
+    const titleText = 'SENHA DE ACESSO';
+    const actionText = 'Use a senha abaixo para fazer seu login:';
+        const year = new Date().getFullYear();
+        const systemName = appName || 'NextLevel E-learning System';
+        // Botão mostra a senha (sem link de ação real) – usamos href vazio para não quebrar filtros; pode ser ajustado depois
+        const safeSenha = senha.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<!DOCTYPE html><html dir="ltr" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office"><head>
+        <meta charset="UTF-8"/><meta content="width=device-width, initial-scale=1" name="viewport"/>
+        <meta name="x-apple-disable-message-reformatting"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+        <meta content="telephone=no" name="format-detection"/>
+        <title>${systemName} - ${titleText}</title>
+        <!--[if (mso 16)]><style type="text/css">a {text-decoration: none;}</style><![endif]-->
+        <!--[if gte mso 9]><style>sup { font-size: 100% !important; }</style><![endif]-->
+        </head><body class="body"><div dir="ltr" class="es-wrapper-color">
+            <table width="100%" cellspacing="0" cellpadding="0" class="es-wrapper"><tbody><tr><td valign="top" class="esd-email-paddings">
+                <table cellpadding="0" cellspacing="0" align="center" class="es-header"><tbody><tr><td align="center" class="es-adaptive esd-stripe">
+                    <table width="600" cellspacing="0" cellpadding="0" bgcolor="#3d5ca3" align="center" class="es-header-body" style="background-color:#3d5ca3"><tbody><tr>
+                        <td align="left" background="https://fwurcif.stripocdn.email/content/guids/CABINET_112efbf2b7fdaa9566e70d14a2294afa7330a36c054b2038b95a508d08fa26a1/images/chatgpt_image_4_de_set_de_2025_21_40_20.png" class="esd-structure es-p20t es-p20b es-p20r es-p20l" style="background-image:url(https://fwurcif.stripocdn.email/content/guids/CABINET_112efbf2b7fdaa9566e70d14a2294afa7330a36c054b2038b95a508d08fa26a1/images/chatgpt_image_4_de_set_de_2025_21_40_20.png);background-repeat:repeat;background-position:left top;background-size:cover">
+                            <table cellspacing="0" cellpadding="0" align="left" class="es-left"><tbody><tr><td width="560" align="left" class="es-m-p20b esd-container-frame"><table width="100%" cellspacing="0" cellpadding="0"><tbody><tr>
+                                <td align="center" class="esd-block-image" style="font-size:0"><a target="_blank"><img src="https://fwurcif.stripocdn.email/content/guids/CABINET_112efbf2b7fdaa9566e70d14a2294afa7330a36c054b2038b95a508d08fa26a1/images/logo.png" alt="" width="150" class="adapt-img"/></a></td>
+                            </tr></tbody></table></td></tr></tbody></table>
+                        </td></tr></tbody></table>
+                </td></tr></tbody></table>
+                <table cellspacing="0" cellpadding="0" align="center" class="es-content"><tbody><tr><td bgcolor="#fafafa" align="center" class="esd-stripe" style="background-color:#fafafa">
+                    <table width="600" cellspacing="0" cellpadding="0" bgcolor="#ffffff" align="center" class="es-content-body" style="background-color:#ffffff"><tbody>
+                        <tr><td align="left" class="esd-structure es-p20r es-p20l es-p20t" style="background-color:transparent;background-position:left top">
+                            <table width="100%" cellspacing="0" cellpadding="0"><tbody><tr><td width="560" valign="top" align="center" class="esd-container-frame">
+                                <table width="100%" cellspacing="0" cellpadding="0" style="background-position:left top"><tbody>
+                                    <tr><td align="center" class="esd-block-image es-p5t es-p5b" style="font-size:0"><a target="_blank"><img src="https://fwurcif.stripocdn.email/content/guids/CABINET_dd354a98a803b60e2f0411e893c82f56/images/23891556799905703.png" alt="" width="175" style="display:block"/></a></td></tr>
+                                    <tr><td align="center" class="esd-block-text es-p15t es-p15b"><h1 style="color:#333333;font-size:20px">${titleText}</h1></td></tr>
+                                    <tr><td align="left" class="esd-block-text es-p40r es-p40l"><p style="text-align:center">Olá,&nbsp;${firstName}</p></td></tr>
+                                    <tr><td align="left" class="esd-block-text es-p35r es-p40l"><p style="text-align:center">${actionText}</p></td></tr>
+                                    <tr><td align="center" class="esd-block-button es-p10r es-p10l es-p20t es-p20b">
+                                        <span class="es-button-border"><a href="#" target="_blank" class="es-button" style="display:inline-block;background:#3d5ca3;color:#ffffff;font-size:16px;font-family:Arial,Helvetica,sans-serif;font-weight:bold;line-height:120%;text-decoration:none;padding:14px 28px;border-radius:6px;letter-spacing:.5px;min-width:160px;">${safeSenha}</a></span>
+                                    </td></tr>
+                                </tbody></table>
+                            </td></tr></tbody></table>
+                        </td></tr>
+                        <tr><td align="left" class="esd-structure es-p5t es-p20b es-p20r es-p20l" style="background-position:left top"><table width="100%" cellspacing="0" cellpadding="0"><tbody><tr><td width="560" valign="top" align="center" class="esd-container-frame"><table width="100%" cellspacing="0" cellpadding="0"><tbody><tr>
+                            <td align="center" class="esd-block-text"><p style="font-size:14px"><a target="_blank" style="font-size:14px;color:#666666;text-decoration:none;cursor:default">Email automático - não responda.</a></p></td>
+                        </tr></tbody></table></td></tr></tbody></table></td></tr>
+                    </tbody></table>
+                </td></tr></tbody></table>
+                <table cellspacing="0" cellpadding="0" align="center" class="es-footer"><tbody><tr><td bgcolor="#fafafa" align="center" class="esd-stripe" style="background-color:#fafafa"><table width="600" cellspacing="0" cellpadding="0" bgcolor="#ffffff" align="center" class="es-footer-body"><tbody><tr>
+                    <td bgcolor="#0b5394" align="left" class="esd-structure es-p10t es-p20r es-p20l es-p10b" style="background-color:#0b5394;background-position:left top"><table width="100%" cellspacing="0" cellpadding="0"><tbody><tr><td width="560" valign="top" align="center" class="esd-container-frame"><table width="100%" cellspacing="0" cellpadding="0"><tbody><tr>
+                        <td align="center" class="esd-block-text es-p5t es-p5b"><h2 style="font-size:16px;color:#ffffff"><strong>© ${year}. &nbsp;${systemName}.</strong></h2></td>
+                    </tr></tbody></table></td></tr></tbody></table></td>
+                </tr></tbody></table></td></tr></tbody></table>
+                <table cellspacing="0" cellpadding="0" align="center" class="es-footer"><tbody><tr><td bgcolor="#fafafa" align="center" class="esd-stripe" style="background-color:#fafafa"><table width="600" cellspacing="0" cellpadding="0" bgcolor="transparent" align="center" class="es-footer-body" style="background-color:transparent"><tbody><tr>
+                    <td align="left" class="esd-structure es-p15t es-p5b es-p20r es-p20l"><table width="100%" cellspacing="0" cellpadding="0"><tbody><tr><td width="560" valign="top" align="center" class="esd-container-frame"><table width="100%" cellspacing="0" cellpadding="0"><tbody><tr>
+                        <td align="center" class="esd-block-text es-m-p5b es-m-p5t"><p style="font-size:12px;color:#666666">Se você não fez essa solicitação, ignore este e-mail ou entre em contato com o suporte.</p></td>
+                    </tr></tbody></table></td></tr></tbody></table></td>
+                </tr></tbody></table></td></tr></tbody></table>
+            </td></tr></tbody></table>
+        </div></body></html>`;
 }
 
-export async function sendRegistrationEmail(params: { nome: string; email: string; senha: string; departamento: string; }) {
-  const logoBase64 = loadLogoBase64();
-  const html = buildRegistrationHtml({ 
-    ...params, 
-    appName: process.env.APP_NAME || 'NextLevel E-learning System',
-    logoBase64 
-  });
-  const text = `🎓 Bem-vindo(a) ao NextLevel E-learning System!\n\nOlá ${params.nome}!\n\nSua conta foi criada com sucesso.\n\n🔐 Senha: ${params.senha}\n\n📧 Email: ${params.email}\n🏢 Departamento: ${params.departamento}\n🎯 Nível inicial: Iniciante\n⭐ XP inicial: 0 pontos\n\nSe você não solicitou este cadastro, ignore este e-mail.\n\n---\nNextLevel E-learning System\n© ${new Date().getFullYear()}`;
-
-  return sendMail(
-    params.email, 
-    `🎓 Bem-vindo(a) ao NextLevel E-learning - Acesso Liberado`, 
-    text, 
-    html
-  );
+export async function sendRegistrationEmail(params: { nome: string; email: string; senha: string; }) {
+    const html = buildPasswordTemplate({ tipo: 'register', nome: params.nome, senha: params.senha, appName: process.env.APP_NAME });
+    // Texto em branco: senha só aparece no HTML conforme template fornecido
+    return sendMail(params.email, '🎓 Acesso Criado - NextLevel', '', html);
 }
 
 // -------- Reset reutilizando layout: muda apenas título do badge e assunto --------
 export async function sendPasswordResetEmail(params: { nome: string; email: string; novaSenha: string; }) {
-    // Reutiliza buildRegistrationHtml passando departamento 'N/D'
-    const html = buildRegistrationHtml({ nome: params.nome, email: params.email, senha: params.novaSenha, departamento: 'N/D', appName: process.env.APP_NAME || 'NextLevel E-learning System', logoBase64: loadLogoBase64() });
-    const text = `🔐 Reset de Senha - NextLevel\n\nOlá ${params.nome}, sua senha foi redefinida.\nNova senha : ${params.novaSenha}\nAltere após o primeiro login.\n\n— NextLevel E-learning System`;
-    return sendMail(params.email, '🔐 Reset de Senha - Nova Senha ', text, html);
+    const html = buildPasswordTemplate({ tipo: 'reset', nome: params.nome, senha: params.novaSenha, appName: process.env.APP_NAME });
+    return sendMail(params.email, '🔐 Senha Redefinida - NextLevel', '', html);
 }
 

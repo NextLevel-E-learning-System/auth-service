@@ -111,7 +111,6 @@ export async function register(data: {
       nome: nome,
       email: email, 
       senha: senhaPlano,
-      departamento: departamento_id
     });
   } catch (emailError) {
     console.error('Erro ao enviar email:', emailError);
