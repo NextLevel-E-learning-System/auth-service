@@ -1,14 +1,13 @@
-FROM node:22-alpine AS build
+FROM node:22-alpine3.20 AS build
 WORKDIR /app
 COPY package*.json ./
-# Instala dependências (bcryptjs puro, evita build nativo do bcrypt)
 RUN npm install
 COPY tsconfig.json ./
 COPY src ./src
 COPY docs ./docs
 RUN npm run build
 
-FROM node:22-alpine
+FROM node:22-alpine3.20
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/package*.json ./
