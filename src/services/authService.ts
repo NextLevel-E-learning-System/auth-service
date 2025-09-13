@@ -45,11 +45,6 @@ export async function createUserAuth({ cpf, nome, email, departamento_id, cargo_
       }
       throw new HttpError(409, 'dados_duplicados', 'Dados já cadastrados no sistema');
     }
-    if (err.code === '23503') { // Violação de foreign key
-      if (err.constraint?.includes('departamento')) {
-        throw new HttpError(400, 'departamento_invalido', 'Departamento não encontrado');
-      }
-    }
   }
 
   return user.rows[0];

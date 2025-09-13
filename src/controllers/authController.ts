@@ -1,12 +1,40 @@
 import { Request, Response } from 'express';
 import { createUserAuth, loginUser, logoutUser, resetPassword } from '../services/authService.js';
 
+// Validação simples de CPF (mesmo algoritmo do banco para evitar roundtrip desnecessário)
+function isValidCPF(raw?: string): boolean {
+  if (!raw) return false;
+  const s = raw.replace(/[^0-9]/g, '');
+  if (s.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(s)) return false; // todos iguais
+  const calcDigit = (base: string, factorStart: number) => {
+    let sum = 0; let factor = factorStart;
+    for (const ch of base) { sum += parseInt(ch, 10) * factor--; }
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+  const d1 = calcDigit(s.substring(0, 9), 10);
+  if (d1 !== parseInt(s[9], 10)) return false;
+  const d2 = calcDigit(s.substring(0, 10), 11);
+  return d2 === parseInt(s[10], 10);
+}
+
 export async function register(req: Request, res: Response) {
   try {
+
+    if (req.body.cpf && !isValidCPF(req.body.cpf)) {
+      return res.status(400).json({ error: 'cpf_invalido' });
+    }
+
     const user = await createUserAuth(req.body);
     res.status(201).json(user);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Traduz constraint do banco se vier mensagem padrão
+    if (message.includes('cpf_valido')) {
+      return res.status(400).json({ error: 'cpf_invalido' });
+    }
+    res.status(400).json({ error: message });
   }
 }
 
