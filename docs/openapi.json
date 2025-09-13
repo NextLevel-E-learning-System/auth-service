@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": { 
     "title": "Auth Service API", 
-    "version": "1.6.0", 
-    "description": "Serviço de autenticação com JWT. Suporte a cadastro completo de funcionários com validação de domínio de email, geração automática de senha  e envio por email. Cria registro completo em auth_service e user_service. Access tokens válidos por 8h, refresh tokens por 24h. Refresh tokens enviados exclusivamente em cookies HttpOnly. Inclui endpoint público de reset de senha que gera nova senha  e invalida todos os tokens ativos." 
+    "version": "2.0.0", 
+    "description": "Serviço responsável apenas por autenticação (login), emissão e rotação de tokens JWT, registro de logs de acesso e gerenciamento de reset de senha.\n\nFluxo de criação de usuários foi movido para o User Service. Este serviço não cria mais usuários diretamente — apenas valida credenciais já provisionadas.\n\nEventos publicados (via RabbitMQ exchange 'auth.events' - direct):\n- auth.login (payload: { email })\n- auth.logout (payload: { refreshToken })\n- auth.password_reset (payload: { email })\n\nTabela outbox: auth_service.outbox_events -> worker publica para RabbitMQ marcando published=true.\n" 
   },
   "paths": {
   "/auth/v1/login": {
@@ -19,100 +19,11 @@
     },
     "/auth/v1/register": {
       "post": {
-        "summary": "Cadastro completo de funcionário",
-        "description": "Permite o cadastro completo de funcionários fornecendo todos os dados pessoais e profissionais. O sistema valida o domínio do email, gera uma senha  de 6 dígitos e envia por email. Cria automaticamente o usuário com status ATIVO e tipo FUNCIONARIO no auth_service e o funcionário completo no user_service.",
-        "tags": ["auth"],
-        "requestBody": { 
-          "required": true, 
-          "content": { 
-            "application/json": { 
-              "schema": { "$ref": "#/components/schemas/RegisterInput" }, 
-              "example": { 
-                "nome": "João Silva",
-                "cpf": "12345678901",
-                "email": "joao.silva@gmail.com",
-                "departamento_id": "TI",
-                "cargo": "Desenvolvedor"
-              } 
-            } 
-          } 
-        },
-        "responses": { 
-          "201": { 
-            "description": "Usuário criado com sucesso", 
-            "content": { 
-              "application/json": { 
-                "schema": { "$ref": "#/components/schemas/RegisterResponse" }, 
-                "example": { 
-                  "id": "550e8400-e29b-41d4-a716-446655440000",
-                  "nome": "João Silva",
-                  "cpf": "12345678901",
-                  "email": "joao.silva@gmail.com",
-                  "departamento_id": "TI",
-                  "cargo": "Desenvolvedor",
-                  "tipo_usuario": "FUNCIONARIO",
-                  "status": "ATIVO",
-                  "mensagem": "Usuário criado com sucesso. Senha  enviada por e-mail." 
-                } 
-              } 
-            } 
-          },
-          "400": { 
-            "description": "Dados inválidos, domínio não permitido ou departamento inexistente",
-            "content": { 
-              "application/json": { 
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
-                "examples": {
-                  "dominio_invalido": {
-                    "summary": "Domínio não permitido",
-                    "value": {
-                      "error": "dominio_nao_permitido",
-                      "message": "Apenas emails dos domínios gmail.com são permitidos para auto-cadastro"
-                    }
-                  },
-                  "validation_error": {
-                    "summary": "Erro de validação",
-                    "value": {
-                      "error": "validation_error",
-                      "message": ["CPF deve conter exatamente 11 dígitos", "Nome é obrigatório"]
-                    }
-                  },
-                  "departamento_invalido": {
-                    "summary": "Departamento inexistente",
-                    "value": {
-                      "error": "departamento_invalido",
-                      "message": "Departamento não encontrado"
-                    }
-                  }
-                }
-              } 
-            } 
-          },
-          "409": { 
-            "description": "Email ou CPF já cadastrado",
-            "content": { 
-              "application/json": { 
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
-                "examples": {
-                  "email_ja_cadastrado": {
-                    "summary": "Email já existe",
-                    "value": {
-                      "error": "email_ja_cadastrado",
-                      "message": "Este email já está cadastrado no sistema"
-                    }
-                  },
-                  "cpf_ja_cadastrado": {
-                    "summary": "CPF já existe",
-                    "value": {
-                      "error": "cpf_ja_cadastrado",
-                      "message": "CPF já está cadastrado no sistema"
-                    }
-                  }
-                }
-              } 
-            } 
-          }
-        }
+        "summary": "(Depreciado) Criação de usuário - mover para User Service",
+        "deprecated": true,
+        "description": "Endpoint legado. A criação de usuários agora deve ser feita no User Service (/funcionarios/register). Mantido temporariamente para compatibilidade e retornará erro 410 em versões futuras.",
+        "tags": ["deprecated"],
+        "responses": { "410": { "description": "Gone" } }
       }
     },
     "/auth/v1/logout": {
@@ -154,91 +65,10 @@
     "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
     "schemas": {
       "LoginInput": { "type": "object", "required": ["email", "senha"], "properties": { "email": { "type": "string", "format": "email" }, "senha": { "type": "string", "minLength": 6 } } },
-      "RegisterInput": { 
-        "type": "object", 
-        "required": ["nome", "cpf", "email", "departamento_id", "cargo"], 
-        "properties": { 
-          "nome": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Nome completo do funcionário",
-            "example": "João Silva"
-          },
-          "cpf": {
-            "type": "string",
-            "pattern": "^\\d{11}$",
-            "description": "CPF com 11 dígitos (apenas números)",
-            "example": "12345678901"
-          },
-          "email": { 
-            "type": "string", 
-            "format": "email",
-            "description": "Email do funcionário que deve pertencer a um domínio autorizado (ex: @gmail.com)",
-            "example": "joao.silva@gmail.com"
-          },
-          "departamento_id": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Código do departamento (deve existir na tabela departamentos)",
-            "example": "TI"
-          },
-          "cargo": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Cargo/função do funcionário",
-            "example": "Desenvolvedor"
-          }
-        },
-        "description": "Dados necessários para cadastro completo do funcionário. Todos os campos são obrigatórios."
-      },
+  "RegisterInput": { "deprecated": true, "type": "object", "description": "Schema legado removido do fluxo atual." },
   "LegacyRefreshInput": { "type": "object", "description": "(Depreciado) Aceito apenas para compatibilidade: refreshToken no corpo. Preferir cookie.", "properties": { "refreshToken": { "type": "string" } } },
   "AuthAccessOnly": { "type": "object", "properties": { "accessToken": { "type": "string" }, "tokenType": { "type": "string", "example": "Bearer" }, "expiresInHours": { "type": "integer", "example": 8 } } },
-      "RegisterResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "ID único do usuário criado"
-          },
-          "nome": {
-            "type": "string",
-            "description": "Nome completo do funcionário"
-          },
-          "cpf": {
-            "type": "string",
-            "description": "CPF do funcionário"
-          },
-          "email": {
-            "type": "string",
-            "format": "email",
-            "description": "Email do usuário"
-          },
-          "departamento_id": {
-            "type": "string",
-            "description": "Código do departamento"
-          },
-          "cargo": {
-            "type": "string",
-            "description": "Cargo/função do funcionário"
-          },
-          "tipo_usuario": {
-            "type": "string",
-            "enum": ["FUNCIONARIO"],
-            "description": "Tipo do usuário, sempre FUNCIONARIO para cadastro"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["ATIVO"],
-            "description": "Status do usuário, sempre ATIVO para cadastro"
-          },
-          "mensagem": {
-            "type": "string",
-            "description": "Mensagem informativa sobre o resultado do cadastro"
-          }
-        },
-        "description": "Resposta do cadastro com informações completas do usuário criado"
-      },
+  "RegisterResponse": { "deprecated": true, "type": "object", "description": "Resposta legado de cadastro (não usado)." },
       "ErrorResponse": {
         "type": "object",
         "properties": {
