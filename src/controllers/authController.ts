@@ -1,71 +1,54 @@
-import { Request, Response, NextFunction } from 'express';
-import { loginSchema, registerSchema } from '../validation/authSchemas.js';
-import { login, register, logout, refresh, resetPassword } from '../services/authService.js';
-import { HttpError } from '../utils/httpError.js';
+import { Request, Response } from 'express';
+import { createUserAuth, loginUser, logoutUser, resetPassword } from '../services/authService.js';
 
-export async function loginHandler(req: Request, res: Response, next: NextFunction) {
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) return next(new HttpError(400, 'validation_error', parsed.error.issues));
+export async function register(req: Request, res: Response) {
   try {
-  const uaHeader = req.headers['user-agent'] as any;
-  const ua = typeof uaHeader === 'string' ? uaHeader : (Array.isArray(uaHeader) ? (uaHeader as string[]).join(' ') : '');
-    const result = await login(parsed.data.email, parsed.data.senha, req.ip, ua);
-    // enviar refresh como HttpOnly cookie
-    const secureCookie = process.env.NODE_ENV === 'production';
-    res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: secureCookie,
-      maxAge: 1000 * 60 * 60 * (parseInt(process.env.REFRESH_TOKEN_EXP_HOURS || '24', 10)),
-      path: '/auth/v1'
-    });
-    res.json({ accessToken: result.accessToken, tokenType: result.tokenType, expiresInHours: result.expiresInHours });
-  } catch (err) { next(err); }
+    const user = await createUserAuth(req.body);
+    res.status(201).json(user);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
 }
 
-export async function registerHandler(req: Request, res: Response, next: NextFunction) {
-  const parsed = registerSchema.safeParse(req.body);
-  if (!parsed.success) return next(new HttpError(400, 'validation_error', parsed.error.issues));
+export async function login(req: Request, res: Response) {
   try {
-    const result = await register(parsed.data);
-    res.status(201).json(result);
-  } catch (err) { next(err); }
+    const token = await loginUser(req.body.email, req.body.senha);
+    res.json({ token });
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message });
+  }
 }
 
-export async function logoutHandler(req: Request, res: Response, next: NextFunction) {
+export async function reset(req: Request, res: Response) {
   try {
-    const invalidateAll = req.header('x-invalidate-all') === 'true';
-    const result = await logout(req.header('authorization'), invalidateAll);
-  const secureCookie = process.env.NODE_ENV === 'production';
-  res.cookie('refreshToken', '', { httpOnly: true, sameSite: 'strict', secure: secureCookie, expires: new Date(0), path: '/auth/v1' });
-  res.json({ message: 'Logout efetuado' });
-  } catch (err) { next(err); }
+    const { email } = req.body;
+    await resetPassword(email);
+    res.json({ message: 'Senha enviada por email' });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
 }
 
-export async function refreshHandler(req: Request, res: Response, next: NextFunction) {
+export async function refresh(req: Request, res: Response) {
   try {
-    const bodyToken = (req.body || {}).refreshToken;
-    const cookieToken = (req as any).cookies?.refreshToken;
-    const refreshToken = bodyToken || cookieToken;
-    const uaHeader = req.headers['user-agent'] as any;
-    const ua = typeof uaHeader === 'string' ? uaHeader : (Array.isArray(uaHeader) ? (uaHeader as string[]).join(' ') : '');
-    const result = await refresh(refreshToken, req.ip, ua);
-    const secureCookie = process.env.NODE_ENV === 'production';
-    res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: secureCookie,
-      maxAge: 1000 * 60 * 60 * (parseInt(process.env.REFRESH_TOKEN_EXP_HOURS || '24', 10)),
-      path: '/auth/v1'
-    });
-    res.json({ accessToken: result.accessToken, tokenType: result.tokenType, expiresInHours: result.expiresInHours });
-  } catch (err) { next(err); }
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(400).json({ error: 'Refresh token ausente' });
+
+    const token = await refreshToken(refreshToken);
+    res.json({ token });
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message });
+  }
 }
 
-export async function resetPasswordHandler(req: Request, res: Response, next: NextFunction) {
+export async function logout(req: Request, res: Response) {
   try {
-    const { email, userId } = req.body || {};
-    const r = await resetPassword({ email, userId });
-    res.json(r);
-  } catch (err) { next(err); }
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(400).json({ error: 'Token ausente' });
+
+    await logoutUser(token);
+    res.json({ message: 'Logout efetuado com sucesso' });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 }
