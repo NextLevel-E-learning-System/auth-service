@@ -6,7 +6,7 @@ import { withClient } from "../config/db.js";
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 
 import type { SignOptions } from "jsonwebtoken";
-import { HttpError } from "../utils/httpError";
+import { HttpError } from "../utils/httpError.js";
 
 function generateToken(payload: object, expiresIn: string, tipo: "ACCESS"|"REFRESH") {
   const options: SignOptions = { expiresIn: expiresIn as jwt.SignOptions["expiresIn"] };
