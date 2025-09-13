@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import bcrypt from 'bcryptjs';
 import jwt from "jsonwebtoken";
-import { withClient } from "../config/db";
+import { withClient } from "../config/db.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 
