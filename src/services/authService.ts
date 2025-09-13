@@ -3,53 +3,121 @@ import { hashPassword, compareHash } from '../utils/hash.js';
 import jwt from 'jsonwebtoken';
 import { HttpError } from '../utils/httpError.js';
 
-export async function createUserAuth({ cpf, nome, email, departamento_id, cargo_nome }: any) {
-    // Validar domínio do email (configurável via env)
+interface CreateUserInput {
+  cpf?: string;
+  nome: string;
+  email: string;
+  departamento_id?: string;
+  cargo_nome?: string;
+}
+
+export async function createUserAuth({ cpf, nome, email, departamento_id, cargo_nome }: CreateUserInput) {
   const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || 'gmail.com').split(',');
   const isValidDomain = allowedDomains.some(domain => email.endsWith(`@${domain.trim()}`));
-  
-    if (!isValidDomain) {
+  if (!isValidDomain) {
     throw new HttpError(400, 'dominio_nao_permitido', `Apenas emails dos domínios ${allowedDomains.join(', ')} são permitidos para auto-cadastro`);
   }
 
-  const password = Math.random().toString().slice(-6);
-  const senhaHash = await hashPassword(password);
+  const tempPassword = Math.random().toString().slice(-6);
+  const senhaHash = await hashPassword(tempPassword);
 
   return await withClient(async c => {
-    const user = await c.query(`
-      INSERT INTO user_service.funcionarios (cpf, nome, email, departamento_id, cargo_nome)
-      VALUES ($1,$2,$3,$4,$5) RETURNING *`, [cpf, nome, email, departamento_id, cargo_nome]);
-
-    const userId = user.rows[0].id;
+    // Validação de CPF via função do banco se informado
+    if (cpf) {
+      const v = await c.query('SELECT public.is_valid_cpf($1) AS ok', [cpf]);
+      if (!v.rows[0].ok) {
+        throw new HttpError(400, 'cpf_invalido', 'CPF inválido');
+      }
+    }
 
     try {
+      // 1) Cria auth user
+      const authRes = await c.query(`
+        INSERT INTO auth_service.usuarios (email, senha_hash)
+        VALUES ($1,$2) RETURNING id, email, criado_em
+      `, [email, senhaHash]);
+      const authUser = authRes.rows[0];
 
-    await c.query(`
-      INSERT INTO auth_service.usuarios (email, senha_hash)
-      VALUES ($1,$2) RETURNING *`, [email, senhaHash]);
+      // 2) Cria funcionario referenciando auth_user_id
+      const funcRes = await c.query(`
+        INSERT INTO user_service.funcionarios (auth_user_id, cpf, nome, email, departamento_id, cargo_nome)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        RETURNING id, auth_user_id, cpf, nome, email, departamento_id, cargo_nome, criado_em
+      `, [authUser.id, cpf || null, nome, email, departamento_id || null, cargo_nome || null]);
+      const funcionario = funcRes.rows[0];
 
-    await c.query(`
-      INSERT INTO user_service.user_roles (user_id, role_id)
-      SELECT $1, id FROM user_service.roles WHERE nome='ALUNO'`, [userId]);
+      // 3) Atribui role padrão ALUNO
+      await c.query(`
+        INSERT INTO user_service.user_roles (user_id, role_id)
+        SELECT $1, r.id FROM user_service.roles r WHERE r.nome='ALUNO'
+        RETURNING id
+      `, [funcionario.id]);
 
-    await c.query(`INSERT INTO user_service.outbox_events (topic, payload) VALUES
-      ('user.created', $1)`, [JSON.stringify({ userId, nome, email, senha: senhaHash, role: 'ALUNO' })]);
+      // 4) Eventos outbox (sem senha ou hash)
+      await c.query(`INSERT INTO user_service.outbox_events (topic, payload) VALUES ($1, $2)`, [
+        'user.created', JSON.stringify({
+          id: funcionario.id,
+            auth_user_id: authUser.id,
+          nome: funcionario.nome,
+          email: funcionario.email,
+          cpf: funcionario.cpf,
+          departamento_id: funcionario.departamento_id,
+          cargo_nome: funcionario.cargo_nome,
+          roles: ['ALUNO']
+        })
+      ]);
 
-    } catch (err: any) {
-       if (err.code === '23505') { // Violação de constraint única
-      if (err.constraint?.includes('cpf')) {
-        throw new HttpError(409, 'cpf_ja_cadastrado', 'CPF já está cadastrado no sistema');
+      await c.query(`INSERT INTO user_service.outbox_events (topic, payload) VALUES ($1, $2)`, [
+        'user.role.granted', JSON.stringify({
+          user_id: funcionario.id,
+          role: 'ALUNO'
+        })
+      ]);
+
+      // 5) Retorno limpo + senha temporária (se necessário exibir para usuário final)
+      return {
+        id: funcionario.id,
+        auth_user_id: authUser.id,
+        nome: funcionario.nome,
+        email: funcionario.email,
+        cpf: funcionario.cpf,
+        departamento_id: funcionario.departamento_id,
+        cargo_nome: funcionario.cargo_nome,
+        roles: ['ALUNO'],
+        temp_password: tempPassword // NOTE: considerar enviar por email e NÃO retornar em prod
+      };
+
+    } catch (err: unknown) {
+      interface PgErr extends Record<string, unknown> { code?: string; constraint?: string; detail?: string }
+      const e = err as PgErr;
+      if (e.code === '23505') {
+        const msg = e.constraint || '';
+        if (msg.includes('usuarios_email_key')) {
+          throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado');
+        }
+        if (msg.includes('funcionarios_cpf_key')) {
+          throw new HttpError(409, 'cpf_ja_cadastrado', 'CPF já cadastrado');
+        }
+        if (msg.includes('funcionarios_email_key')) {
+          throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado');
+        }
+        throw new HttpError(409, 'duplicado', 'Registro duplicado');
       }
-      if (err.constraint?.includes('email')) {
-        throw new HttpError(409, 'email_ja_cadastrado', 'Este email já está cadastrado no sistema');
+      if (e.code === '23503') {
+        if (typeof e.detail === 'string' && e.detail.includes('departamentos')) {
+          throw new HttpError(400, 'departamento_inexistente', 'Departamento não encontrado');
+        }
+        if (typeof e.detail === 'string' && e.detail.includes('cargos')) {
+          throw new HttpError(400, 'cargo_inexistente', 'Cargo não encontrado');
+        }
       }
-      throw new HttpError(409, 'dados_duplicados', 'Dados já cadastrados no sistema');
+      if (e.code === '23514' && typeof e.constraint === 'string' && e.constraint.includes('cpf_valido')) {
+        throw new HttpError(400, 'cpf_invalido', 'CPF inválido');
+      }
+      throw err;
     }
-  }
-
-  return user.rows[0];
-    });
-  }
+  });
+}
 
 export async function loginUser(email: string, senha: string) {
   return await withClient(async c => {
@@ -80,9 +148,8 @@ export async function resetPassword(email: string) {
 
     if (!r.rowCount) throw new Error('Email não encontrado');
 
-    // Opcional: publicar evento user.password_reset
     await c.query(`INSERT INTO user_service.outbox_events (topic, payload) VALUES
-      ('user.password_reset', $1)`, [JSON.stringify({ usuario_id: r.rows[0].id, email, senha: senhaHash })]);
+      ($1, $2)`, ['user.password_reset', JSON.stringify({ usuario_id: r.rows[0].id, email })]);
   });
 
   return true;
@@ -100,7 +167,6 @@ export async function refreshToken(oldToken: string) {
     const usuario_id = r.rows[0].usuario_id;
     const newJwt = jwt.sign({ userId: usuario_id }, process.env.JWT_SECRET!, { expiresIn: '8h' });
 
-    // Marca o antigo como inativo e adiciona novo token
     await c.query(`UPDATE auth_service.tokens SET ativo=false WHERE token_jwt=$1`, [oldToken]);
     await c.query(`
       INSERT INTO auth_service.tokens (token_jwt, usuario_id, data_expiracao, tipo_token)
