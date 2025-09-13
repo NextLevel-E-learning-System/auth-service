@@ -7,7 +7,8 @@ import swaggerUi from 'swagger-ui-express';
 import { authRouter } from './routes/authRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
-const app = express();
+export function createServer() {
+  const app = express();
 app.use(express.json());
   const allowAll = process.env.ALLOW_ALL_ORIGINS === 'true';
   app.use(cors({
@@ -23,5 +24,5 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
 app.use('/auth/v1', authRouter);
 app.use(errorHandler);
-
-export default app;
+  return app;
+}
