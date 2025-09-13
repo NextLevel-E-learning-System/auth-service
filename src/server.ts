@@ -3,7 +3,6 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import { logger } from './config/logger.js';
 import { loadOpenApi } from './config/openapi.js';
-import swaggerUi from 'swagger-ui-express';
 import { authRouter } from './routes/authRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -20,7 +19,6 @@ app.use((req, _res, next) => { (req as any).log = logger; next(); });
 
 const openapiSpec = loadOpenApi('Auth Service API');
 app.get('/openapi.json', (_req,res)=> res.json(openapiSpec));
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
 app.use('/auth/v1', authRouter);
 app.use(errorHandler);

@@ -1,91 +1,140 @@
 {
   "openapi": "3.0.3",
-  "info": { 
-    "title": "Auth Service API", 
-    "version": "2.0.0", 
-    "description": "Serviço responsável apenas por autenticação (login), emissão e rotação de tokens JWT, registro de logs de acesso e gerenciamento de reset de senha.\n\nFluxo de criação de usuários foi movido para o User Service. Este serviço não cria mais usuários diretamente — apenas valida credenciais já provisionadas.\n\nEventos publicados (via RabbitMQ exchange 'auth.events' - direct):\n- auth.login (payload: { email })\n- auth.logout (payload: { refreshToken })\n- auth.password_reset (payload: { email })\n\nTabela outbox: auth_service.outbox_events -> worker publica para RabbitMQ marcando published=true.\n" 
+  "info": {
+    "title": "Auth Service API",
+    "version": "2.0.0",
+    "description": "Serviço de autenticação com login, logout, refresh e reset de senha."
   },
   "paths": {
-  "/auth/v1/login": {
+    "/auth/v1/login": {
       "post": {
         "summary": "Login",
         "tags": ["auth"],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginInput" }, "example": { "email": "admin@nextlevel.com", "senha": "ADM2025" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "senha"],
+                "properties": {
+                  "email": {"type": "string", "format": "email"},
+                  "senha": {"type": "string", "minLength": 6}
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Login bem-sucedido (refresh em cookie HttpOnly)", "headers": { "Set-Cookie": { "schema": { "type": "string", "example": "refreshToken=<httpOnly_jwt>; Path=/auth/v1; HttpOnly; SameSite=Strict" }, "description": "Contém o refresh token. Não é acessível via JS (HttpOnly)." } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthAccessOnly" }, "example": { "accessToken": "<access_jwt>", "tokenType": "Bearer", "expiresInHours": 8 } } } },
-          "401": { "description": "Credenciais inválidas" }
+          "200": {
+            "description": "Login bem-sucedido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {"type": "string"},
+                    "tokenType": {"type": "string", "example": "Bearer"},
+                    "expiresInHours": {"type": "integer", "example": 8}
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Credenciais inválidas"}
         }
-      }
-    },
-    "/auth/v1/register": {
-      "post": {
-        "summary": "(Depreciado) Criação de usuário - mover para User Service",
-        "deprecated": true,
-        "description": "Endpoint legado. A criação de usuários agora deve ser feita no User Service (/funcionarios/register). Mantido temporariamente para compatibilidade e retornará erro 410 em versões futuras.",
-        "tags": ["deprecated"],
-        "responses": { "410": { "description": "Gone" } }
       }
     },
     "/auth/v1/logout": {
       "post": {
-        "summary": "Logout (invalida token atual ou todos)",
+        "summary": "Logout",
         "tags": ["auth"],
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [ { "name": "x-invalidate-all", "in": "header", "schema": { "type": "boolean" }, "required": false, "description": "Se true, invalida todos os tokens ativos do usuário" } ],
-        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "sucesso": { "type": "boolean" } } }, "example": { "sucesso": true } } } }, "401": { "description": "Token ausente ou inválido" } }
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Logout realizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sucesso": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/auth/v1/refresh": {
       "post": {
-        "summary": "Gera novo par (rotação do refresh atual)",
+        "summary": "Renovar token",
         "tags": ["auth"],
-    "requestBody": { "required": false, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LegacyRefreshInput" }, "example": { } } } },
-    "responses": { "200": { "description": "Novo access token (refresh rotacionado em cookie)", "headers": { "Set-Cookie": { "schema": { "type": "string", "example": "refreshToken=<novo_refresh>; Path=/auth/v1; HttpOnly; SameSite=Strict" }, "description": "Novo refresh token rotacionado" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthAccessOnly" }, "example": { "accessToken": "<novo_access>", "tokenType": "Bearer", "expiresInHours": 8 } } } }, "401": { "description": "Refresh inválido ou expirado" } }
+        "responses": {
+          "200": {
+            "description": "Token renovado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {"type": "string"},
+                    "tokenType": {"type": "string", "example": "Bearer"},
+                    "expiresInHours": {"type": "integer", "example": 8}
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Refresh token inválido"}
+        }
       }
     },
     "/auth/v1/reset-password": {
       "post": {
-        "summary": "Reset de senha (público por email ou userId)",
-        "description": "Gera uma nova senha  de 6 dígitos para o usuário identificado por email ou userId, envia e-mail com template específico e invalida todos os tokens ativos (logout forçado). Não revela se o email existe (mitigação leve); respostas genéricas 200 ou 404 quando usuário não encontrado.",
+        "summary": "Reset de senha",
         "tags": ["auth"],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordInput" }, "examples": { "por_email": { "summary": "Via email", "value": { "email": "usuario@dominio.com" } }, "por_userId": { "summary": "Via userId", "value": { "userId": "550e8400-e29b-41d4-a716-446655440000" } } } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {"type": "string", "format": "email"},
+                  "userId": {"type": "string", "format": "uuid"}
+                },
+                "minProperties": 1
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "Senha redefinida (email enviado se usuário existir)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordResponse" }, "example": { "sucesso": true } } } },
-          "400": { "description": "Email ou userId ausente" },
-          "403": { "description": "Usuário inativo" },
-          "404": { "description": "Usuário não encontrado" }
+          "200": {
+            "description": "Reset enviado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sucesso": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
   },
   "components": {
-    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
-    "schemas": {
-      "LoginInput": { "type": "object", "required": ["email", "senha"], "properties": { "email": { "type": "string", "format": "email" }, "senha": { "type": "string", "minLength": 6 } } },
-  "RegisterInput": { "deprecated": true, "type": "object", "description": "Schema legado removido do fluxo atual." },
-  "LegacyRefreshInput": { "type": "object", "description": "(Depreciado) Aceito apenas para compatibilidade: refreshToken no corpo. Preferir cookie.", "properties": { "refreshToken": { "type": "string" } } },
-  "AuthAccessOnly": { "type": "object", "properties": { "accessToken": { "type": "string" }, "tokenType": { "type": "string", "example": "Bearer" }, "expiresInHours": { "type": "integer", "example": 8 } } },
-  "RegisterResponse": { "deprecated": true, "type": "object", "description": "Resposta legado de cadastro (não usado)." },
-      "ErrorResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "description": "Código do erro"
-          },
-          "message": {
-            "type": "string",
-            "description": "Mensagem detalhada do erro"
-          }
-        },
-        "description": "Estrutura padrão de resposta de erro"
-      },
-      "DecodedAccessPayload": { "type": "object", "properties": { "sub": { "type": "string" }, "email": { "type": "string" }, "status": { "type": "string" }, "roles": { "type": "array", "items": { "type": "string" } }, "type": { "type": "string", "example": "access" }, "iat": { "type": "integer" }, "exp": { "type": "integer" } } }
-  ,"ResetPasswordInput": { "type": "object", "properties": { "email": { "type": "string", "format": "email" }, "userId": { "type": "string", "format": "uuid" } }, "minProperties": 1, "description": "Informe email OU userId" }
-  ,"ResetPasswordResponse": { "type": "object", "properties": { "sucesso": { "type": "boolean" } } }
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
     }
   }
 }
