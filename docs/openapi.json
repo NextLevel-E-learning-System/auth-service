@@ -90,42 +90,6 @@
           "401": {"description": "Refresh token inválido"}
         }
       }
-    },
-    "/auth/v1/reset-password": {
-      "post": {
-        "summary": "Reset de senha",
-        "tags": ["auth"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "email": {"type": "string", "format": "email"},
-                  "userId": {"type": "string", "format": "uuid"}
-                },
-                "minProperties": 1
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Reset enviado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "sucesso": {"type": "boolean"}
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
