@@ -6,6 +6,7 @@ import { withClient } from "../config/db";
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 
 import type { SignOptions } from "jsonwebtoken";
+import { HttpError } from "../utils/httpError";
 
 function generateToken(payload: object, expiresIn: string, tipo: "ACCESS"|"REFRESH") {
   const options: SignOptions = { expiresIn: expiresIn as jwt.SignOptions["expiresIn"] };
@@ -13,6 +14,11 @@ function generateToken(payload: object, expiresIn: string, tipo: "ACCESS"|"REFRE
 }
 
 export const register = async (req: Request, res: Response) => {
+  const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || 'gmail.com').split(',');
+  const isValidDomain = allowedDomains.some(domain => email.endsWith(`@${domain.trim()}`));
+  if (!isValidDomain) {
+    throw new HttpError(400, 'dominio_nao_permitido', `Apenas emails dos domínios ${allowedDomains.join(', ')} são permitidos para auto-cadastro`);
+  }
   const { email, senha } = req.body;
   const hash = await bcrypt.hash(senha, 12);
 
