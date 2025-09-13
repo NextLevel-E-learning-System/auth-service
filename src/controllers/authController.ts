@@ -1,82 +1,151 @@
-import { Request, Response } from 'express';
-import { createUserAuth, loginUser, logoutUser, resetPassword } from '../services/authService.js';
+import { Request, Response } from "express";
+import bcrypt from 'bcryptjs';
+import jwt from "jsonwebtoken";
+import { withClient } from "../config/db";
 
-// Validação simples de CPF (mesmo algoritmo do banco para evitar roundtrip desnecessário)
-function isValidCPF(raw?: string): boolean {
-  if (!raw) return false;
-  const s = raw.replace(/[^0-9]/g, '');
-  if (s.length !== 11) return false;
-  if (/^(\d)\1{10}$/.test(s)) return false; // todos iguais
-  const calcDigit = (base: string, factorStart: number) => {
-    let sum = 0; let factor = factorStart;
-    for (const ch of base) { sum += parseInt(ch, 10) * factor--; }
-    const mod = sum % 11;
-    return mod < 2 ? 0 : 11 - mod;
-  };
-  const d1 = calcDigit(s.substring(0, 9), 10);
-  if (d1 !== parseInt(s[9], 10)) return false;
-  const d2 = calcDigit(s.substring(0, 10), 11);
-  return d2 === parseInt(s[10], 10);
+const JWT_SECRET = process.env.JWT_SECRET || "changeme";
+
+import type { SignOptions } from "jsonwebtoken";
+
+function generateToken(payload: object, expiresIn: string, tipo: "ACCESS"|"REFRESH") {
+  const options: SignOptions = { expiresIn: expiresIn as jwt.SignOptions["expiresIn"] };
+  return jwt.sign(payload, JWT_SECRET, options);
 }
 
-export async function register(req: Request, res: Response) {
+export const register = async (req: Request, res: Response) => {
+  const { email, senha } = req.body;
+  const hash = await bcrypt.hash(senha, 12);
+
+  await withClient(async (c) => {
+    const result = await c.query(
+      `INSERT INTO auth_service.usuarios(email, senha_hash) 
+       VALUES ($1,$2) RETURNING id, email, ativo, criado_em`,
+      [email, hash]
+    );
+
+    // evento outbox: user criado
+    await c.query(
+      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
+       VALUES ('auth',$1,'auth.user_created',$2)`,
+      [result.rows[0].id, JSON.stringify(result.rows[0])]
+    );
+
+    res.status(201).json({ usuario: result.rows[0] });
+  });
+};
+
+export const login = async (req: Request, res: Response) => {
+  const { email, senha } = req.body;
+
+  await withClient(async (c) => {
+    const { rows } = await c.query(
+      `SELECT * FROM auth_service.usuarios WHERE email=$1 AND ativo=true`,
+      [email]
+    );
+    const user = rows[0];
+    if (!user) return res.status(401).json({ error: "Credenciais inválidas" });
+
+    const valid = await bcrypt.compare(senha, user.senha_hash);
+    if (!valid) return res.status(401).json({ error: "Credenciais inválidas" });
+
+    const accessToken = generateToken({ sub: user.id }, "15m", "ACCESS");
+    const refreshToken = generateToken({ sub: user.id }, "7d", "REFRESH");
+
+    await c.query(
+      `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+       VALUES ($1,$2,'ACCESS', now() + interval '15 minutes')`,
+      [accessToken, user.id]
+    );
+    await c.query(
+      `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+       VALUES ($1,$2,'REFRESH', now() + interval '7 days')`,
+      [refreshToken, user.id]
+    );
+
+    await c.query(
+      `INSERT INTO auth_service.logs_acesso(usuario_id, ip, user_agent)
+       VALUES ($1,$2,$3)`,
+      [user.id, req.ip, req.headers["user-agent"]]
+    );
+
+    await c.query(
+      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
+       VALUES ('auth',$1,'auth.login',$2)`,
+      [user.id, JSON.stringify({ email: user.email })]
+    );
+
+    res.json({ accessToken, refreshToken });
+  });
+};
+
+export const refresh = async (req: Request, res: Response) => {
+  const { refreshToken } = req.body;
   try {
+    const decoded: any = jwt.verify(refreshToken, JWT_SECRET);
 
-    if (req.body.cpf && !isValidCPF(req.body.cpf)) {
-      return res.status(400).json({ error: 'cpf_invalido' });
-    }
+    await withClient(async (c) => {
+      const { rows } = await c.query(
+        `SELECT * FROM auth_service.tokens 
+         WHERE token_jwt=$1 AND ativo=true AND tipo_token='REFRESH'`,
+        [refreshToken]
+      );
+      if (!rows[0]) return res.status(401).json({ error: "Refresh token inválido" });
 
-    const user = await createUserAuth(req.body);
-    res.status(201).json(user);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    // Traduz constraint do banco se vier mensagem padrão
-    if (message.includes('cpf_valido')) {
-      return res.status(400).json({ error: 'cpf_invalido' });
-    }
-    res.status(400).json({ error: message });
+      const newAccessToken = generateToken({ sub: decoded.sub }, "15m", "ACCESS");
+
+      await c.query(
+        `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+         VALUES ($1,$2,'ACCESS', now() + interval '15 minutes')`,
+        [newAccessToken, decoded.sub]
+      );
+
+      res.json({ accessToken: newAccessToken });
+    });
+  } catch {
+    res.status(401).json({ error: "Token inválido" });
   }
-}
+};
 
-export async function login(req: Request, res: Response) {
-  try {
-    const token = await loginUser(req.body.email, req.body.senha);
-    res.json({ token });
-  } catch (err) {
-    res.status(401).json({ error: (err as Error).message });
-  }
-}
+export const logout = async (req: Request, res: Response) => {
+  const { refreshToken } = req.body;
+  await withClient(async (c) => {
+    await c.query(
+      `UPDATE auth_service.tokens SET ativo=false WHERE token_jwt=$1 AND tipo_token='REFRESH'`,
+      [refreshToken]
+    );
+    await c.query(
+      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
+       VALUES ('auth','00000000-0000-0000-0000-000000000000','auth.logout',$1)`,
+      [JSON.stringify({ refreshToken })]
+    );
+    res.json({ message: "Logout realizado" });
+  });
+};
 
-export async function reset(req: Request, res: Response) {
-  try {
-    const { email } = req.body;
-    await resetPassword(email);
-    res.json({ message: 'Senha enviada por email' });
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
-}
+export const reset = async (req: Request, res: Response) => {
+  const { email, novaSenha } = req.body;
+  const hash = await bcrypt.hash(novaSenha, 12);
 
-export async function refresh(req: Request, res: Response) {
-  try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) return res.status(400).json({ error: 'Refresh token ausente' });
+  await withClient(async (c) => {
+    const { rows } = await c.query(
+      `UPDATE auth_service.usuarios SET senha_hash=$1 WHERE email=$2 RETURNING id,email`,
+      [hash, email]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Usuário não encontrado" });
 
-    const token = await refreshToken(refreshToken);
-    res.json({ token });
-  } catch (err) {
-    res.status(401).json({ error: (err as Error).message });
-  }
-}
+    // Invalida tokens antigos
+    await c.query(
+      `UPDATE auth_service.tokens SET ativo=false WHERE usuario_id=$1`,
+      [rows[0].id]
+    );
 
-export async function logout(req: Request, res: Response) {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(400).json({ error: 'Token ausente' });
+    // Evento de reset de senha
+    await c.query(
+      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
+       VALUES ('auth',$1,'auth.password_reset',$2)`,
+      [rows[0].id, JSON.stringify({ email })]
+    );
 
-    await logoutUser(token);
-    res.json({ message: 'Logout efetuado com sucesso' });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-}
+    res.json({ message: "Senha redefinida com sucesso" });
+  });
+};

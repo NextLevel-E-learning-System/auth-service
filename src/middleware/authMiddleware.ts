@@ -1,16 +1,24 @@
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 
-export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token ausente' });
+const JWT_SECRET = process.env.JWT_SECRET;
 
-  const token = authHeader.split(' ')[1];
+export function authenticate(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) return res.status(401).json({ error: "Token ausente" });
+
+  const token = authHeader.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Token inválido" });
+
+  if (!JWT_SECRET) {
+    return res.status(500).json({ error: "JWT_SECRET não configurado no ambiente" });
+  }
+
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET!);
-    (req as any).user = payload;
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    (req as any).userId = decoded.sub;
     next();
   } catch {
-    res.status(401).json({ error: 'Token inválido ou expirado' });
+    res.status(401).json({ error: "Token inválido ou expirado" });
   }
 }
