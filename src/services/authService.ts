@@ -23,6 +23,11 @@ export async function createUserAuth({ cpf, nome, email, departamento_id, cargo_
     const userId = user.rows[0].id;
 
     try {
+
+    await c.query(`
+      INSERT INTO auth_service.usuarios (email, senha_hash)
+      VALUES ($1,$2) RETURNING *`, [email, senhaHash]);
+
     await c.query(`
       INSERT INTO user_service.user_roles (user_id, role_id)
       SELECT $1, id FROM user_service.roles WHERE nome='ALUNO'`, [userId]);
