@@ -8,19 +8,26 @@ const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 import type { SignOptions } from "jsonwebtoken";
 import { HttpError } from "../utils/httpError.js";
 
-function generateToken(payload: object, expiresIn: string, tipo: "ACCESS"|"REFRESH") {
+function generateToken(payload: object, expiresIn: string) {
   const options: SignOptions = { expiresIn: expiresIn as jwt.SignOptions["expiresIn"] };
   return jwt.sign(payload, JWT_SECRET, options);
 }
 
 export const register = async (req: Request, res: Response) => {
+  const { email } = req.body as { email?: string };
+
+  if (!email) {
+    throw new HttpError(400, 'dados_invalidos', 'Email é obrigatório');
+  }
+
   const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || 'gmail.com').split(',');
-  const isValidDomain = allowedDomains.some(domain => email.endsWith(`@${domain.trim()}`));
+  const isValidDomain = allowedDomains.some(domain => email.toLowerCase().endsWith(`@${domain.trim().toLowerCase()}`));
   if (!isValidDomain) {
     throw new HttpError(400, 'dominio_nao_permitido', `Apenas emails dos domínios ${allowedDomains.join(', ')} são permitidos para auto-cadastro`);
   }
-  const { email, senha } = req.body;
-  const hash = await bcrypt.hash(senha, 12);
+
+  const senhaClara = Math.random().toString().slice(-6);
+  const hash = await bcrypt.hash(senhaClara, 12);
 
   await withClient(async (c) => {
     const result = await c.query(
@@ -29,14 +36,15 @@ export const register = async (req: Request, res: Response) => {
       [email, hash]
     );
 
-    // evento outbox: user criado
+    const usuario = result.rows[0];
+
     await c.query(
       `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
        VALUES ('auth',$1,'auth.user_created',$2)`,
-      [result.rows[0].id, JSON.stringify(result.rows[0])]
+      [usuario.id, JSON.stringify({ ...usuario, senha_clara: senhaClara })]
     );
 
-    res.status(201).json({ usuario: result.rows[0] });
+  res.status(201).json({ usuario: { ...usuario } });
   });
 };
 
@@ -54,17 +62,17 @@ export const login = async (req: Request, res: Response) => {
     const valid = await bcrypt.compare(senha, user.senha_hash);
     if (!valid) return res.status(401).json({ error: "Credenciais inválidas" });
 
-    const accessToken = generateToken({ sub: user.id }, "15m", "ACCESS");
-    const refreshToken = generateToken({ sub: user.id }, "7d", "REFRESH");
+  const accessToken = generateToken({ sub: user.id }, "8h");
+  const refreshToken = generateToken({ sub: user.id }, "24h");
 
     await c.query(
-      `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
-       VALUES ($1,$2,'ACCESS', now() + interval '15 minutes')`,
+  `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+   VALUES ($1,$2,'ACCESS', now() + interval '8 hours')`,
       [accessToken, user.id]
     );
     await c.query(
-      `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
-       VALUES ($1,$2,'REFRESH', now() + interval '7 days')`,
+  `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+   VALUES ($1,$2,'REFRESH', now() + interval '24 hours')`,
       [refreshToken, user.id]
     );
 
@@ -87,7 +95,7 @@ export const login = async (req: Request, res: Response) => {
 export const refresh = async (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   try {
-    const decoded: any = jwt.verify(refreshToken, JWT_SECRET);
+  const decoded = jwt.verify(refreshToken, JWT_SECRET) as { sub: string; iat: number; exp: number };
 
     await withClient(async (c) => {
       const { rows } = await c.query(
@@ -97,11 +105,11 @@ export const refresh = async (req: Request, res: Response) => {
       );
       if (!rows[0]) return res.status(401).json({ error: "Refresh token inválido" });
 
-      const newAccessToken = generateToken({ sub: decoded.sub }, "15m", "ACCESS");
+  const newAccessToken = generateToken({ sub: decoded.sub }, "8h");
 
       await c.query(
-        `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
-         VALUES ($1,$2,'ACCESS', now() + interval '15 minutes')`,
+  `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+   VALUES ($1,$2,'ACCESS', now() + interval '8 hours')`,
         [newAccessToken, decoded.sub]
       );
 
@@ -113,19 +121,34 @@ export const refresh = async (req: Request, res: Response) => {
 };
 
 export const logout = async (req: Request, res: Response) => {
-  const { refreshToken } = req.body;
-  await withClient(async (c) => {
-    await c.query(
-      `UPDATE auth_service.tokens SET ativo=false WHERE token_jwt=$1 AND tipo_token='REFRESH'`,
-      [refreshToken]
-    );
-    await c.query(
-      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
-       VALUES ('auth','00000000-0000-0000-0000-000000000000','auth.logout',$1)`,
-      [JSON.stringify({ refreshToken })]
-    );
-    res.json({ message: "Logout realizado" });
-  });
+  const { refreshToken } = req.body as { refreshToken?: string };
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'refresh_token_obrigatorio' });
+  }
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_SECRET) as { sub: string };
+    await withClient(async (c) => {
+      // Invalidar especificamente o refresh token recebido
+      await c.query(
+        `UPDATE auth_service.tokens SET ativo=false WHERE token_jwt=$1 AND tipo_token='REFRESH'`,
+        [refreshToken]
+      );
+      // Invalidar todos os access tokens ativos do usuário (revogação)
+      await c.query(
+        `UPDATE auth_service.tokens SET ativo=false WHERE usuario_id=$1 AND tipo_token='ACCESS' AND ativo=true`,
+        [decoded.sub]
+      );
+      // Registrar evento com aggregate_id = usuário real
+      await c.query(
+        `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
+         VALUES ('auth',$1,'auth.logout',$2)`,
+        [decoded.sub, JSON.stringify({ refreshToken })]
+      );
+      res.json({ message: 'Logout realizado' });
+    });
+  } catch {
+    return res.status(401).json({ error: 'refresh_token_invalido' });
+  }
 };
 
 export const reset = async (req: Request, res: Response) => {
