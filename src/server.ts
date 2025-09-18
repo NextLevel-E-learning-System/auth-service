@@ -17,8 +17,14 @@ app.use(express.json());
 app.use(cookieParser());
 app.use((req, _res, next) => { (req as any).log = logger; next(); });
 
-const openapiSpec = loadOpenApi('Auth Service API');
-app.get('/openapi.json', (_req,res)=> res.json(openapiSpec));
+app.get('/openapi.json', async (_req,res)=> {
+  try {
+    const openapiSpec = await loadOpenApi('Auth Service API');
+    res.json(openapiSpec);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load OpenAPI spec' });
+  }
+});
 
 app.use('/auth/v1', authRouter);
 app.use(errorHandler);
