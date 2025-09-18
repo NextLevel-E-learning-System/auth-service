@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from 'bcryptjs';
 import jwt from "jsonwebtoken";
 import { withClient } from "../config/db.js";
+import { publishEvent } from "../config/rabbitmq.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 
@@ -11,6 +12,11 @@ import { HttpError } from "../utils/httpError.js";
 function generateToken(payload: object, expiresIn: string) {
   const options: SignOptions = { expiresIn: expiresIn as jwt.SignOptions["expiresIn"] };
   return jwt.sign(payload, JWT_SECRET, options);
+}
+
+interface PgErrorLike { code?: string }
+function isPgError(obj: unknown): obj is PgErrorLike {
+  return typeof obj === 'object' && obj !== null && 'code' in obj;
 }
 
 export const register = async (req: Request, res: Response) => {
@@ -29,23 +35,41 @@ export const register = async (req: Request, res: Response) => {
   const senhaClara = Math.random().toString().slice(-6);
   const hash = await bcrypt.hash(senhaClara, 12);
 
-  await withClient(async (c) => {
-    const result = await c.query(
-      `INSERT INTO auth_service.usuarios(email, senha_hash) 
-       VALUES ($1,$2) RETURNING id, email, ativo, criado_em`,
-      [email, hash]
-    );
+  try {
+    await withClient(async (c) => {
+      const result = await c.query(
+        `INSERT INTO auth_service.usuarios(email, senha_hash) 
+         VALUES ($1,$2) RETURNING id, email, ativo, criado_em`,
+        [email, hash]
+      );
 
-    const usuario = result.rows[0];
+      const usuario = result.rows[0];
 
-    await c.query(
-      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
-       VALUES ('auth',$1,'auth.user_created',$2)`,
-      [usuario.id, JSON.stringify({ ...usuario, senha_clara: senhaClara })]
-    );
+      // NÃO armazenar senha em claro no evento persistido.
+      await c.query(
+        `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
+         VALUES ('auth',$1,'auth.user_created',$2)`,
+        [usuario.id, JSON.stringify({ id: usuario.id, email: usuario.email, criado_em: usuario.criado_em, ativo: usuario.ativo })]
+      );
 
-  res.status(201).json({ usuario: { ...usuario } });
-  });
+      // Evento efêmero separado contendo a senha (não persiste em DB). Usar fila/exchange direct.
+      try {
+        await publishEvent('auth.user_password_ephemeral', { email: usuario.email, senha: senhaClara });
+      } catch (ephemeralErr) {
+        // Logar, mas não falhar o registro do usuário.
+        // eslint-disable-next-line no-console
+        console.error('[auth-service] falha publicando evento efêmero de senha', (ephemeralErr as Error).message);
+      }
+
+      res.status(201).json({ usuario: { ...usuario } });
+    });
+  } catch (e: unknown) {
+    // Violação de chave única (email) -> 409
+    if (isPgError(e) && e.code === '23505') {
+      return res.status(409).json({ error: 'email_ja_cadastrado' });
+    }
+    throw e; // será pego pelo errorHandler
+  }
 };
 
 export const login = async (req: Request, res: Response) => {
