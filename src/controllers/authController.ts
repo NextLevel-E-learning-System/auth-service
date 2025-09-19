@@ -45,19 +45,16 @@ export const register = async (req: Request, res: Response) => {
 
       const usuario = result.rows[0];
 
-      // NÃO armazenar senha em claro no evento persistido.
-      await c.query(
-        `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
-         VALUES ('auth',$1,'auth.user_created',$2)`,
-        [usuario.id, JSON.stringify({ id: usuario.id, email: usuario.email, criado_em: usuario.criado_em, ativo: usuario.ativo })]
-      );
-
-      // Evento efêmero separado contendo a senha (não persiste em DB). Usar fila/exchange direct.
+      // Publicar evento de criação de usuário (sem senha) diretamente no RabbitMQ
+      try {
+        await publishEvent('auth.user_created', { id: usuario.id, email: usuario.email, criado_em: usuario.criado_em, ativo: usuario.ativo });
+      } catch (errPub) {
+        console.error('[auth-service] falha publicando auth.user_created', (errPub as Error).message);
+      }
+      // Publicar evento efêmero com a senha
       try {
         await publishEvent('auth.user_password_ephemeral', { email: usuario.email, senha: senhaClara });
       } catch (ephemeralErr) {
-        // Logar, mas não falhar o registro do usuário.
-        // eslint-disable-next-line no-console
         console.error('[auth-service] falha publicando evento efêmero de senha', (ephemeralErr as Error).message);
       }
 
@@ -106,11 +103,11 @@ export const login = async (req: Request, res: Response) => {
       [user.id, req.ip, req.headers["user-agent"]]
     );
 
-    await c.query(
-      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
-       VALUES ('auth',$1,'auth.login',$2)`,
-      [user.id, JSON.stringify({ email: user.email })]
-    );
+    try {
+      await publishEvent('auth.login', { userId: user.id, email: user.email });
+    } catch (e) {
+      console.error('[auth-service] falha publicando auth.login', (e as Error).message);
+    }
 
     res.json({ accessToken, refreshToken });
   });
@@ -163,11 +160,11 @@ export const logout = async (req: Request, res: Response) => {
         [decoded.sub]
       );
       // Registrar evento com aggregate_id = usuário real
-      await c.query(
-        `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
-         VALUES ('auth',$1,'auth.logout',$2)`,
-        [decoded.sub, JSON.stringify({ refreshToken })]
-      );
+      try {
+        await publishEvent('auth.logout', { userId: decoded.sub, refreshToken });
+      } catch (e) {
+        console.error('[auth-service] falha publicando auth.logout', (e as Error).message);
+      }
       res.json({ message: 'Logout realizado' });
     });
   } catch {
@@ -193,11 +190,11 @@ export const reset = async (req: Request, res: Response) => {
     );
 
     // Evento de reset de senha
-    await c.query(
-      `INSERT INTO auth_service.outbox_events(aggregate_type, aggregate_id, event_type, payload)
-       VALUES ('auth',$1,'auth.password_reset',$2)`,
-      [rows[0].id, JSON.stringify({ email })]
-    );
+    try {
+      await publishEvent('auth.password_reset', { userId: rows[0].id, email });
+    } catch (e) {
+      console.error('[auth-service] falha publicando auth.password_reset', (e as Error).message);
+    }
 
     res.json({ message: "Senha redefinida com sucesso" });
   });
