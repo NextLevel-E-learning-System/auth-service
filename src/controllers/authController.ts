@@ -9,7 +9,7 @@ import { HttpError } from "../utils/httpError.js";
 interface UserData {
   id: string;
   email: string;
-  status: string;
+  ativo: boolean;
   roles: string[];
 }
 
@@ -26,7 +26,7 @@ function genAccessToken(user: UserData) {
   const payload = { 
     sub: user.id, 
     email: user.email, 
-    status: user.status, 
+    ativo: user.ativo, 
     roles: user.roles, 
     type: 'access' 
   };
@@ -44,7 +44,7 @@ function genRefreshToken(user: UserData) {
   const payload = { 
     sub: user.id, 
     email: user.email, 
-    status: user.status, 
+    ativo: user.ativo, 
     roles: user.roles, 
     type: 'refresh' 
   };
@@ -137,13 +137,11 @@ export const login = async (req: Request, res: Response) => {
       throw new HttpError(401, 'credenciais_invalidas');
     }
 
-    // Preparar dados essenciais do usuário para o token
-    const roles = [user.role || 'ALUNO'];
     const userData = { 
       id: user.funcionario_id, 
       email: user.email, 
-      status: 'ATIVO',
-      roles
+      ativo: user.ativo,
+      roles: user.role
     };
 
     // Gerar tokens com informações completas
@@ -225,13 +223,11 @@ export const refresh = async (req: Request, res: Response) => {
         return res.status(401).json({ error: "Usuário não encontrado" });
       }
 
-      // Preparar dados essenciais do usuário
-      const roles = [user.role || 'ALUNO'];
       const userData: UserData = { 
         id: user.funcionario_id, 
         email: user.email, 
-        status: 'ATIVO', // derivado de ativo=true
-        roles
+        ativo: user.ativo,
+        roles: user.role
       };
 
       // Gerar novo access token
