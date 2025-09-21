@@ -120,12 +120,9 @@ export const login = async (req: Request, res: Response) => {
     // Buscar usuário com informações completas incluindo dados do funcionário
     const { rows } = await c.query(
       `SELECT u.funcionario_id, u.email, u.ativo, u.senha_hash,
-              f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel,
-              COALESCE(r.nome, 'ALUNO') as tipo_usuario
+              f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel, f.role
        FROM auth_service.usuarios u
        LEFT JOIN user_service.funcionarios f ON u.funcionario_id = f.id AND f.ativo = true
-       LEFT JOIN user_service.funcionario_roles ur ON f.id = ur.funcionario_id AND ur.active = true
-       LEFT JOIN user_service.roles r ON ur.role_id = r.id
        WHERE u.email = $1 AND u.ativo = true`,
       [email]
     );
@@ -141,7 +138,7 @@ export const login = async (req: Request, res: Response) => {
     }
 
     // Preparar dados essenciais do usuário para o token
-    const roles = [user.tipo_usuario];
+    const roles = [user.role || 'ALUNO'];
     const userData = { 
       id: user.funcionario_id, 
       email: user.email, 
@@ -216,12 +213,9 @@ export const refresh = async (req: Request, res: Response) => {
       // Buscar dados atualizados do usuário para o novo token
       const { rows: userRows } = await c.query(
         `SELECT u.funcionario_id, u.email, u.ativo, 
-                f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel,
-                COALESCE(r.nome, 'ALUNO') as tipo_usuario
+                f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel, f.role
          FROM auth_service.usuarios u
          LEFT JOIN user_service.funcionarios f ON u.funcionario_id = f.id AND f.ativo = true
-         LEFT JOIN user_service.funcionario_roles ur ON f.id = ur.funcionario_id AND ur.active = true
-         LEFT JOIN user_service.roles r ON ur.role_id = r.id
          WHERE u.funcionario_id = $1 AND u.ativo = true`,
         [decoded.sub]
       );
@@ -232,7 +226,7 @@ export const refresh = async (req: Request, res: Response) => {
       }
 
       // Preparar dados essenciais do usuário
-      const roles = [user.tipo_usuario];
+      const roles = [user.role || 'ALUNO'];
       const userData: UserData = { 
         id: user.funcionario_id, 
         email: user.email, 
