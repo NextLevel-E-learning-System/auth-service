@@ -83,7 +83,7 @@ export const register = async (req: Request, res: Response) => {
     await withClient(async (c) => {
       const result = await c.query(
         `INSERT INTO auth_service.usuarios(email, senha_hash) 
-         VALUES ($1,$2) RETURNING id, email, ativo, criado_em`,
+         VALUES ($1,$2) RETURNING funcionario_id, email, ativo, criado_em`,
         [email, hash]
       );
 
@@ -91,7 +91,7 @@ export const register = async (req: Request, res: Response) => {
 
       // Publicar evento de criação de usuário (sem senha) diretamente no RabbitMQ
       try {
-        await publishEvent('auth.user_created', { id: usuario.id, email: usuario.email, criado_em: usuario.criado_em, ativo: usuario.ativo });
+        await publishEvent('auth.user_created', { id: usuario.funcionario_id, email: usuario.email, criado_em: usuario.criado_em, ativo: usuario.ativo });
       } catch (errPub) {
         console.error('[auth-service] falha publicando auth.user_created', (errPub as Error).message);
       }
@@ -119,12 +119,12 @@ export const login = async (req: Request, res: Response) => {
   await withClient(async (c) => {
     // Buscar usuário com informações completas incluindo dados do funcionário
     const { rows } = await c.query(
-      `SELECT u.id, u.email, u.ativo, u.senha_hash,
-              f.id as funcionario_id, f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel,
+      `SELECT u.funcionario_id, u.email, u.ativo, u.senha_hash,
+              f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel,
               COALESCE(r.nome, 'ALUNO') as tipo_usuario
        FROM auth_service.usuarios u
-       LEFT JOIN user_service.funcionarios f ON u.id = f.auth_user_id AND f.ativo = true
-       LEFT JOIN user_service.user_roles ur ON f.id = ur.user_id AND ur.active = true
+       LEFT JOIN user_service.funcionarios f ON u.funcionario_id = f.id AND f.ativo = true
+       LEFT JOIN user_service.funcionario_roles ur ON f.id = ur.funcionario_id AND ur.active = true
        LEFT JOIN user_service.roles r ON ur.role_id = r.id
        WHERE u.email = $1 AND u.ativo = true`,
       [email]
@@ -143,7 +143,7 @@ export const login = async (req: Request, res: Response) => {
     // Preparar dados essenciais do usuário para o token
     const roles = [user.tipo_usuario];
     const userData = { 
-      id: user.id, 
+      id: user.funcionario_id, 
       email: user.email, 
       status: 'ATIVO',
       roles
@@ -155,32 +155,32 @@ export const login = async (req: Request, res: Response) => {
 
     // Armazenar tokens no banco
     await c.query(
-      `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+      `INSERT INTO auth_service.tokens(token_jwt, funcionario_id, tipo_token, data_expiracao)
        VALUES ($1,$2,'ACCESS', $3)`,
-      [accessToken, user.id, accessExpiresAt]
+      [accessToken, user.funcionario_id, accessExpiresAt]
     );
     
     await c.query(
-      `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+      `INSERT INTO auth_service.tokens(token_jwt, funcionario_id, tipo_token, data_expiracao)
        VALUES ($1,$2,'REFRESH', $3)`,
-      [hash(refreshToken), user.id, refreshExpiresAt]
+      [hash(refreshToken), user.funcionario_id, refreshExpiresAt]
     );
 
     // Log de acesso
     await c.query(
-      `UPDATE auth_service.usuarios SET ultimo_acesso = NOW() WHERE id = $1`,
-      [user.id]
+      `UPDATE auth_service.usuarios SET ultimo_acesso = NOW() WHERE funcionario_id = $1`,
+      [user.funcionario_id]
     );
 
     await c.query(
-      `INSERT INTO auth_service.logs_acesso(usuario_id, ip, user_agent)
+      `INSERT INTO auth_service.logs_acesso(funcionario_id, ip, user_agent)
        VALUES ($1,$2,$3)`,
-      [user.id, req.ip, req.headers["user-agent"]]
+      [user.funcionario_id, req.ip, req.headers["user-agent"]]
     );
 
     // Publicar evento de login
     try {
-      await publishEvent('auth.login', { userId: user.id, email: user.email });
+      await publishEvent('auth.login', { userId: user.funcionario_id, email: user.email });
     } catch (e) {
       console.error('[auth-service] falha publicando auth.login', (e as Error).message);
     }
@@ -215,14 +215,14 @@ export const refresh = async (req: Request, res: Response) => {
 
       // Buscar dados atualizados do usuário para o novo token
       const { rows: userRows } = await c.query(
-        `SELECT u.id, u.email, u.ativo, 
-                f.id as funcionario_id, f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel,
+        `SELECT u.funcionario_id, u.email, u.ativo, 
+                f.nome, f.departamento_id, f.cargo_nome, f.xp_total, f.nivel,
                 COALESCE(r.nome, 'ALUNO') as tipo_usuario
          FROM auth_service.usuarios u
-         LEFT JOIN user_service.funcionarios f ON u.id = f.auth_user_id AND f.ativo = true
-         LEFT JOIN user_service.user_roles ur ON f.id = ur.user_id AND ur.active = true
+         LEFT JOIN user_service.funcionarios f ON u.funcionario_id = f.id AND f.ativo = true
+         LEFT JOIN user_service.funcionario_roles ur ON f.id = ur.funcionario_id AND ur.active = true
          LEFT JOIN user_service.roles r ON ur.role_id = r.id
-         WHERE u.id = $1 AND u.ativo = true`,
+         WHERE u.funcionario_id = $1 AND u.ativo = true`,
         [decoded.sub]
       );
 
@@ -234,7 +234,7 @@ export const refresh = async (req: Request, res: Response) => {
       // Preparar dados essenciais do usuário
       const roles = [user.tipo_usuario];
       const userData: UserData = { 
-        id: user.id, 
+        id: user.funcionario_id, 
         email: user.email, 
         status: 'ATIVO', // derivado de ativo=true
         roles
@@ -245,7 +245,7 @@ export const refresh = async (req: Request, res: Response) => {
 
       // Armazenar novo access token
       await c.query(
-        `INSERT INTO auth_service.tokens(token_jwt, usuario_id, tipo_token, data_expiracao)
+        `INSERT INTO auth_service.tokens(token_jwt, funcionario_id, tipo_token, data_expiracao)
          VALUES ($1,$2,'ACCESS', $3)`,
         [newAccessToken, decoded.sub, accessExpiresAt]
       );
@@ -277,7 +277,7 @@ export const logout = async (req: Request, res: Response) => {
       
       // Invalidar todos os access tokens ativos do usuário (revogação)
       await c.query(
-        `UPDATE auth_service.tokens SET ativo=false WHERE usuario_id=$1 AND tipo_token='ACCESS' AND ativo=true`,
+        `UPDATE auth_service.tokens SET ativo=false WHERE funcionario_id=$1 AND tipo_token='ACCESS' AND ativo=true`,
         [decoded.sub]
       );
       
@@ -302,20 +302,20 @@ export const reset = async (req: Request, res: Response) => {
 
   await withClient(async (c) => {
     const { rows } = await c.query(
-      `UPDATE auth_service.usuarios SET senha_hash=$1 WHERE email=$2 RETURNING id,email`,
+      `UPDATE auth_service.usuarios SET senha_hash=$1 WHERE email=$2 RETURNING funcionario_id,email`,
       [hash, email]
     );
     if (!rows[0]) return res.status(404).json({ error: "Usuário não encontrado" });
 
     // Invalida tokens antigos
     await c.query(
-      `UPDATE auth_service.tokens SET ativo=false WHERE usuario_id=$1`,
-      [rows[0].id]
+      `UPDATE auth_service.tokens SET ativo=false WHERE funcionario_id=$1`,
+      [rows[0].funcionario_id]
     );
 
     // Evento de reset de senha
     try {
-      await publishEvent('auth.password_reset', { userId: rows[0].id, email });
+      await publishEvent('auth.password_reset', { userId: rows[0].funcionario_id, email });
     } catch (e) {
       console.error('[auth-service] falha publicando auth.password_reset', (e as Error).message);
     }
