@@ -10,7 +10,7 @@ interface UserData {
   id: string;
   email: string;
   ativo: boolean;
-  roles: string[];
+  roles: string; // Single role, not array
 }
 
 function buildSigningKey() {
@@ -194,7 +194,7 @@ export const refresh = async (req: Request, res: Response) => {
   
   try {
     const key = buildSigningKey();
-    const decoded = jwt.verify(refreshToken, key) as { sub: string; email: string; status: string; roles: string[]; iat: number; exp: number };
+    const decoded = jwt.verify(refreshToken, key) as { sub: string; email: string; status: string; roles: string; iat: number; exp: number };
 
     await withClient(async (c) => {
       // Verificar se o refresh token hasheado existe e está ativo
