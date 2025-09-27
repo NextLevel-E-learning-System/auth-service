@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { createHash } from 'crypto';
 import { withClient } from "../config/db.js";
 import { publishEvent } from "../config/rabbitmq.js";
-import { HttpError } from "../utils/httpError.js";
+// Respostas simplificadas diretas sem abstração excessiva
 
 interface UserData {
   id: string;
@@ -67,13 +67,13 @@ export const register = async (req: Request, res: Response) => {
   const { email } = req.body as { email?: string };
 
   if (!email) {
-    throw new HttpError(400, 'dados_invalidos', 'Email é obrigatório');
+  return res.status(400).json({ erro: 'dados_invalidos', mensagem: 'Email é obrigatório' });
   }
 
   const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || 'gmail.com').split(',');
   const isValidDomain = allowedDomains.some(domain => email.toLowerCase().endsWith(`@${domain.trim().toLowerCase()}`));
   if (!isValidDomain) {
-    throw new HttpError(400, 'dominio_nao_permitido', `Apenas emails dos domínios ${allowedDomains.join(', ')} são permitidos para auto-cadastro`);
+  return res.status(400).json({ erro: 'dominio_nao_permitido', mensagem: `Apenas emails dos domínios ${allowedDomains.join(', ')} são permitidos para auto-cadastro` });
   }
 
   const senhaClara = Math.random().toString().slice(-6);
@@ -102,12 +102,12 @@ export const register = async (req: Request, res: Response) => {
         console.error('[auth-service] falha publicando evento efêmero de senha', (ephemeralErr as Error).message);
       }
 
-      res.status(201).json({ usuario: { ...usuario } });
+  res.status(201).json({ usuario: { ...usuario }, mensagem: 'Usuário criado com sucesso' });
     });
   } catch (e: unknown) {
     // Violação de chave única (email) -> 409
     if (isPgError(e) && e.code === '23505') {
-      return res.status(409).json({ error: 'email_ja_cadastrado' });
+  return res.status(409).json({ erro: 'email_ja_cadastrado', mensagem: 'Já existe um usuário cadastrado com este email.' });
     }
     throw e; // será pego pelo errorHandler
   }
@@ -129,12 +129,12 @@ export const login = async (req: Request, res: Response) => {
     
     const user = rows[0];
     if (!user) {
-      throw new HttpError(401, 'credenciais_invalidas');
+  return res.status(401).json({ erro: 'credenciais_invalidas', mensagem: 'Credenciais inválidas' });
     }
 
     const valid = await bcrypt.compare(senha, user.senha_hash);
     if (!valid) {
-      throw new HttpError(401, 'credenciais_invalidas');
+  return res.status(401).json({ erro: 'credenciais_invalidas', mensagem: 'Credenciais inválidas' });
     }
 
     const userData = { 
@@ -180,11 +180,12 @@ export const login = async (req: Request, res: Response) => {
       console.error('[auth-service] falha publicando auth.login', (e as Error).message);
     }
 
-    res.json({ 
-      accessToken, 
-      refreshToken, 
-      tokenType: 'Bearer', 
-      expiresInHours: accessExpHours 
+    res.status(200).json({ 
+      accessToken,
+      refreshToken,
+      tokenType: 'Bearer',
+      expiresInHours: accessExpHours,
+      mensagem: 'Login realizado com sucesso'
     });
   });
 };
@@ -240,11 +241,11 @@ export const refresh = async (req: Request, res: Response) => {
         [newAccessToken, decoded.sub, accessExpiresAt]
       );
 
-      res.json({ accessToken: newAccessToken });
+  res.status(200).json({ accessToken: newAccessToken, mensagem: 'Token renovado com sucesso' });
     });
   } catch (error) {
     console.error('[auth-service] Erro no refresh:', error);
-    res.status(401).json({ error: "Token inválido" });
+    res.status(401).json({ erro: 'token_invalido', mensagem: 'Token inválido ou expirado' });
   }
 };
 
@@ -278,11 +279,11 @@ export const logout = async (req: Request, res: Response) => {
         console.error('[auth-service] falha publicando auth.logout', (e as Error).message);
       }
       
-      res.json({ message: 'Logout realizado' });
+  res.status(200).json({ mensagem: 'Logout realizado com sucesso' });
     });
   } catch (error) {
     console.error('[auth-service] Erro no logout:', error);
-    return res.status(401).json({ error: 'refresh_token_invalido' });
+    return res.status(401).json({ erro: 'refresh_token_invalido', mensagem: 'Refresh token inválido' });
   }
 };
 
@@ -295,7 +296,7 @@ export const reset = async (req: Request, res: Response) => {
       `UPDATE auth_service.usuarios SET senha_hash=$1 WHERE email=$2 RETURNING funcionario_id,email`,
       [hash, email]
     );
-    if (!rows[0]) return res.status(404).json({ error: "Usuário não encontrado" });
+  if (!rows[0]) return res.status(404).json({ erro: 'usuario_nao_encontrado', mensagem: 'Usuário não encontrado' });
 
     // Invalida tokens antigos
     await c.query(
@@ -310,6 +311,6 @@ export const reset = async (req: Request, res: Response) => {
       console.error('[auth-service] falha publicando auth.password_reset', (e as Error).message);
     }
 
-    res.json({ message: "Senha redefinida com sucesso" });
+  res.status(200).json({ mensagem: 'Senha redefinida com sucesso' });
   });
 };

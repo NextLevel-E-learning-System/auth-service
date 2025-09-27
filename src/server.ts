@@ -4,7 +4,6 @@ import cors from 'cors';
 import { logger } from './config/logger.js';
 import { loadOpenApi } from './config/openapi.js';
 import { authRouter } from './routes/authRoutes.js';
-import { errorHandler } from './middleware/errorHandler.js';
 
 export function createServer() {
   const app = express();
@@ -15,7 +14,7 @@ app.use(express.json());
     credentials: true
   }));
 app.use(cookieParser());
-app.use((req, _res, next) => { (req as any).log = logger; next(); });
+app.use((req: express.Request & { log?: typeof logger }, _res, next) => { req.log = logger; next(); });
 
 app.get('/openapi.json', async (_req,res)=> {
   try {
@@ -27,6 +26,5 @@ app.get('/openapi.json', async (_req,res)=> {
 });
 
 app.use('/auth/v1', authRouter);
-app.use(errorHandler);
   return app;
 }
