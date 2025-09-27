@@ -21,7 +21,7 @@ app.get('/openapi.json', async (_req,res)=> {
     const openapiSpec = await loadOpenApi('Auth Service API');
     res.json(openapiSpec);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to load OpenAPI spec' });
+  res.status(500).json({ erro: 'falha_carregar_openapi', mensagem: 'Falha ao carregar especificação OpenAPI' });
   }
 });
 

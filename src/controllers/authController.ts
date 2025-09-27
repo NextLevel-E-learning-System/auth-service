@@ -206,7 +206,7 @@ export const refresh = async (req: Request, res: Response) => {
       );
       
       if (!rows[0]) {
-        return res.status(401).json({ error: "Refresh token inválido" });
+  return res.status(401).json({ erro: 'refresh_token_invalido', mensagem: 'Refresh token inválido' });
       }
 
       // Buscar dados atualizados do usuário para o novo token
@@ -221,7 +221,7 @@ export const refresh = async (req: Request, res: Response) => {
 
       const user = userRows[0];
       if (!user) {
-        return res.status(401).json({ error: "Usuário não encontrado" });
+  return res.status(401).json({ erro: 'usuario_nao_encontrado', mensagem: 'Usuário não encontrado' });
       }
 
       const userData: UserData = { 
@@ -252,7 +252,7 @@ export const refresh = async (req: Request, res: Response) => {
 export const logout = async (req: Request, res: Response) => {
   const { refreshToken } = req.body as { refreshToken?: string };
   if (!refreshToken) {
-    return res.status(400).json({ error: 'refresh_token_obrigatorio' });
+  return res.status(400).json({ erro: 'refresh_token_obrigatorio', mensagem: 'Refresh token é obrigatório' });
   }
   
   try {
