@@ -5,11 +5,17 @@ export const openapiSpec = {
     "version": "2.0.0",
     "description": "Serviço de autenticação."
   },
+  "tags": [
+    {
+      "name": "Auth - Autenticação",
+      "description": "Autenticação - Login, logout e gestão de tokens"
+    }
+  ],
   "paths": {
     "/auth/v1/login": {
       "post": {
         "summary": "Login",
-        "tags": ["auth"],
+        "tags": ["Auth - Autenticação"],
         "requestBody": {
           "required": true,
           "content": {
@@ -48,7 +54,7 @@ export const openapiSpec = {
     "/auth/v1/logout": {
       "post": {
         "summary": "Logout",
-        "tags": ["auth"],
+        "tags": ["Auth - Autenticação"],
         "security": [{"bearerAuth": []}],
         "responses": {
           "200": {
@@ -70,7 +76,7 @@ export const openapiSpec = {
     "/auth/v1/refresh": {
       "post": {
         "summary": "Renovar token",
-        "tags": ["auth"],
+        "tags": ["Auth - Autenticação"],
         "responses": {
           "200": {
             "description": "Token renovado",
