@@ -63,55 +63,6 @@ function isPgError(obj: unknown): obj is PgErrorLike {
   return typeof obj === 'object' && obj !== null && 'code' in obj;
 }
 
-export const register = async (req: Request, res: Response) => {
-  const { email } = req.body as { email?: string };
-
-  if (!email) {
-  return res.status(400).json({ erro: 'dados_invalidos', mensagem: 'Email é obrigatório' });
-  }
-
-  const allowedDomains = (process.env.ALLOWED_EMAIL_DOMAINS || 'gmail.com').split(',');
-  const isValidDomain = allowedDomains.some(domain => email.toLowerCase().endsWith(`@${domain.trim().toLowerCase()}`));
-  if (!isValidDomain) {
-  return res.status(400).json({ erro: 'dominio_nao_permitido', mensagem: `Apenas emails dos domínios ${allowedDomains.join(', ')} são permitidos para auto-cadastro` });
-  }
-
-  const senhaClara = Math.random().toString().slice(-6);
-  const hash = await bcrypt.hash(senhaClara, 12);
-
-  try {
-    await withClient(async (c) => {
-      const result = await c.query(
-        `INSERT INTO auth_service.usuarios(email, senha_hash) 
-         VALUES ($1,$2) RETURNING funcionario_id, email, ativo, criado_em`,
-        [email, hash]
-      );
-
-      const usuario = result.rows[0];
-
-      // Publicar evento de criação de usuário (sem senha) diretamente no RabbitMQ
-      try {
-        await publishEvent('auth.user_created', { id: usuario.funcionario_id, email: usuario.email, criado_em: usuario.criado_em, ativo: usuario.ativo });
-      } catch (errPub) {
-        console.error('[auth-service] falha publicando auth.user_created', (errPub as Error).message);
-      }
-      // Publicar evento efêmero com a senha
-      try {
-        await publishEvent('auth.user_password_ephemeral', { email: usuario.email, senha: senhaClara });
-      } catch (ephemeralErr) {
-        console.error('[auth-service] falha publicando evento efêmero de senha', (ephemeralErr as Error).message);
-      }
-
-  res.status(201).json({ usuario: { ...usuario }, mensagem: 'Usuário criado com sucesso' });
-    });
-  } catch (e: unknown) {
-    // Violação de chave única (email) -> 409
-    if (isPgError(e) && e.code === '23505') {
-  return res.status(409).json({ erro: 'email_ja_cadastrado', mensagem: 'Já existe um usuário cadastrado com este email.' });
-    }
-    throw e; // será pego pelo errorHandler
-  }
-};
 
 export const login = async (req: Request, res: Response) => {
   const { email, senha } = req.body;
