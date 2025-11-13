@@ -132,17 +132,13 @@ export const login = async (req: Request, res: Response) => {
     }
 
     // Configurar cookies HTTP-only
-    const isProduction = process.env.NODE_ENV === 'production';
-    // Permitir cookies sem Secure quando o origin é localhost
     const origin = req.headers.origin || '';
     const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
     
-    // Para cross-site (localhost -> railway.app), precisa SameSite=None + Secure
-    // Mas isso não funciona com HTTP, então para dev local, melhor opção é:
-    // 1. SameSite=None para permitir cross-site
-    // 2. Secure=false APENAS se for localhost (inseguro mas necessário para dev)
+    // Com HTTPS local (mkcert), podemos usar Secure=true + SameSite=None
+    // Isso permite cookies cross-site funcionarem (localhost:3000 HTTPS -> railway.app HTTPS)
     const sameSiteValue = isLocalhost ? 'none' as const : 'lax' as const;
-    const useSecure = !isLocalhost; // Sempre secure exceto localhost
+    const useSecure = true; // Sempre secure (localhost agora é HTTPS)
     
     const cookieOptions = {
       httpOnly: true,
@@ -245,7 +241,7 @@ export const refresh = async (req: Request, res: Response) => {
       const origin = req.headers.origin || '';
       const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
       const sameSiteValue = isLocalhost ? 'none' as const : 'lax' as const;
-      const useSecure = !isLocalhost;
+      const useSecure = true; // Sempre secure (HTTPS local e produção)
       
       res.cookie('accessToken', newAccessToken, {
         httpOnly: true,
