@@ -136,12 +136,18 @@ export const login = async (req: Request, res: Response) => {
     // Permitir cookies sem Secure quando o origin é localhost
     const origin = req.headers.origin || '';
     const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-    const useSecure = isProduction && !isLocalhost;
+    
+    // Para cross-site (localhost -> railway.app), precisa SameSite=None + Secure
+    // Mas isso não funciona com HTTP, então para dev local, melhor opção é:
+    // 1. SameSite=None para permitir cross-site
+    // 2. Secure=false APENAS se for localhost (inseguro mas necessário para dev)
+    const sameSiteValue = isLocalhost ? 'none' as const : 'lax' as const;
+    const useSecure = !isLocalhost; // Sempre secure exceto localhost
     
     const cookieOptions = {
       httpOnly: true,
-      secure: useSecure, // Desabilitar Secure para localhost
-      sameSite: 'lax' as const,
+      secure: useSecure,
+      sameSite: sameSiteValue,
       path: '/',
       maxAge: accessExpHours * 60 * 60 * 1000, // em milissegundos
     };
@@ -149,7 +155,7 @@ export const login = async (req: Request, res: Response) => {
     const refreshCookieOptions = {
       httpOnly: true,
       secure: useSecure,
-      sameSite: 'lax' as const,
+      sameSite: sameSiteValue,
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
     };
@@ -235,16 +241,16 @@ export const refresh = async (req: Request, res: Response) => {
       );
 
       // Atualizar cookie do access token
-      const isProduction = process.env.NODE_ENV === 'production';
       const accessExpHours = parseInt(process.env.ACCESS_TOKEN_EXP_HOURS || '8', 10);
       const origin = req.headers.origin || '';
       const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-      const useSecure = isProduction && !isLocalhost;
+      const sameSiteValue = isLocalhost ? 'none' as const : 'lax' as const;
+      const useSecure = !isLocalhost;
       
       res.cookie('accessToken', newAccessToken, {
         httpOnly: true,
         secure: useSecure,
-        sameSite: 'lax' as const,
+        sameSite: sameSiteValue,
         path: '/',
         maxAge: accessExpHours * 60 * 60 * 1000,
       });
