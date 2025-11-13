@@ -131,18 +131,55 @@ export const login = async (req: Request, res: Response) => {
       console.error('[auth-service] falha publicando auth.login', (e as Error).message);
     }
 
+    // Configurar cookies HTTP-only
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction, // HTTPS apenas em produção
+      sameSite: 'lax' as const,
+      path: '/',
+      maxAge: accessExpHours * 60 * 60 * 1000, // em milissegundos
+    };
+
+    const refreshCookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax' as const,
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
+    };
+
+    // Setar cookies
+    res.cookie('accessToken', accessToken, cookieOptions);
+    res.cookie('refreshToken', refreshToken, refreshCookieOptions);
+
+    // Retornar resposta SEM os tokens (eles estão nos cookies)
     res.status(200).json({ 
-      accessToken,
-      refreshToken,
-      tokenType: 'Bearer',
-      expiresInHours: accessExpHours,
-      mensagem: 'Login realizado com sucesso'
+      mensagem: 'Login realizado com sucesso',
+      usuario: {
+        id: user.funcionario_id,
+        nome: user.nome,
+        email: user.email,
+        departamento: user.departamento_id,
+        cargo: user.cargo_nome,
+        xp: user.xp_total,
+        nivel: user.nivel,
+        role: user.role
+      }
     });
   });
 };
 
 export const refresh = async (req: Request, res: Response) => {
-  const { refreshToken } = req.body;
+  // Buscar refresh token do cookie ao invés do body
+  const refreshToken = req.cookies?.refreshToken;
+  
+  if (!refreshToken) {
+    return res.status(401).json({ 
+      erro: 'refresh_token_ausente', 
+      mensagem: 'Refresh token não encontrado' 
+    });
+  }
   
   try {
     const key = buildSigningKey();
@@ -192,7 +229,19 @@ export const refresh = async (req: Request, res: Response) => {
         [newAccessToken, decoded.sub, accessExpiresAt]
       );
 
-  res.status(200).json({ accessToken: newAccessToken, mensagem: 'Token renovado com sucesso' });
+      // Atualizar cookie do access token
+      const isProduction = process.env.NODE_ENV === 'production';
+      const accessExpHours = parseInt(process.env.ACCESS_TOKEN_EXP_HOURS || '8', 10);
+      
+      res.cookie('accessToken', newAccessToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax' as const,
+        path: '/',
+        maxAge: accessExpHours * 60 * 60 * 1000,
+      });
+
+      res.status(200).json({ mensagem: 'Token renovado com sucesso' });
     });
   } catch (error) {
     console.error('[auth-service] Erro no refresh:', error);
@@ -201,9 +250,14 @@ export const refresh = async (req: Request, res: Response) => {
 };
 
 export const logout = async (req: Request, res: Response) => {
-  const { refreshToken } = req.body as { refreshToken?: string };
+  // Buscar refresh token do cookie
+  const refreshToken = req.cookies?.refreshToken;
+  
   if (!refreshToken) {
-  return res.status(400).json({ erro: 'refresh_token_obrigatorio', mensagem: 'Refresh token é obrigatório' });
+    return res.status(400).json({ 
+      erro: 'refresh_token_obrigatorio', 
+      mensagem: 'Refresh token é obrigatório' 
+    });
   }
   
   try {
@@ -230,10 +284,19 @@ export const logout = async (req: Request, res: Response) => {
         console.error('[auth-service] falha publicando auth.logout', (e as Error).message);
       }
       
-  res.status(200).json({ mensagem: 'Logout realizado com sucesso' });
+      // Limpar cookies
+      res.clearCookie('accessToken', { path: '/' });
+      res.clearCookie('refreshToken', { path: '/' });
+      
+      res.status(200).json({ mensagem: 'Logout realizado com sucesso' });
     });
   } catch (error) {
     console.error('[auth-service] Erro no logout:', error);
+    
+    // Mesmo com erro, limpar cookies
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+    
     return res.status(401).json({ erro: 'refresh_token_invalido', mensagem: 'Refresh token inválido' });
   }
 };
@@ -264,4 +327,52 @@ export const reset = async (req: Request, res: Response) => {
 
   res.status(200).json({ mensagem: 'Senha redefinida com sucesso' });
   });
+};
+
+// Endpoint para obter dados do usuário autenticado
+export const me = async (req: Request, res: Response) => {
+  // O user_id virá do header x-user-id injetado pelo API Gateway
+  const userId = req.headers['x-user-id'] as string;
+  
+  if (!userId) {
+    return res.status(401).json({ 
+      erro: 'nao_autenticado', 
+      mensagem: 'Usuário não autenticado' 
+    });
+  }
+  
+  try {
+    await withClient(async (c) => {
+      const { rows } = await c.query(
+        `SELECT u.id, u.email, u.ativo, u.roles 
+         FROM auth_service.usuarios u 
+         WHERE u.id = $1`,
+        [userId]
+      );
+      
+      if (rows.length === 0) {
+        return res.status(404).json({ 
+          erro: 'usuario_nao_encontrado', 
+          mensagem: 'Usuário não encontrado' 
+        });
+      }
+      
+      const user = rows[0];
+      
+      // Buscar dados adicionais do funcionário no user-service
+      // Como não temos acesso direto, retornar apenas dados do auth
+      res.status(200).json({
+        id: user.id,
+        email: user.email,
+        role: user.roles,
+        ativo: user.ativo
+      });
+    });
+  } catch (error) {
+    console.error('[auth-service] Erro no /me:', error);
+    return res.status(500).json({ 
+      erro: 'erro_servidor', 
+      mensagem: 'Erro ao buscar dados do usuário' 
+    });
+  }
 };
