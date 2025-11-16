@@ -4,7 +4,6 @@ import jwt from "jsonwebtoken";
 import { createHash } from 'crypto';
 import { withClient } from "../config/db.js";
 import { publishEvent } from "../config/rabbitmq.js";
-// Respostas simplificadas diretas sem abstração excessiva
 
 interface UserData {
   id: string;
@@ -57,12 +56,6 @@ function genRefreshToken(user: UserData) {
 function hash(value: string) {
   return createHash('sha256').update(value).digest('hex');
 }
-
-interface PgErrorLike { code?: string }
-function isPgError(obj: unknown): obj is PgErrorLike {
-  return typeof obj === 'object' && obj !== null && 'code' in obj;
-}
-
 
 export const login = async (req: Request, res: Response) => {
   const { email, senha } = req.body;
@@ -309,32 +302,4 @@ export const logout = async (req: Request, res: Response) => {
     
     return res.status(401).json({ erro: 'refresh_token_invalido', mensagem: 'Refresh token inválido' });
   }
-};
-
-export const reset = async (req: Request, res: Response) => {
-  const { email, novaSenha } = req.body;
-  const hash = await bcrypt.hash(novaSenha, 12);
-
-  await withClient(async (c) => {
-    const { rows } = await c.query(
-      `UPDATE auth_service.usuarios SET senha_hash=$1 WHERE email=$2 RETURNING funcionario_id,email`,
-      [hash, email]
-    );
-  if (!rows[0]) return res.status(404).json({ erro: 'usuario_nao_encontrado', mensagem: 'Usuário não encontrado' });
-
-    // Invalida tokens antigos
-    await c.query(
-      `UPDATE auth_service.tokens SET ativo=false WHERE funcionario_id=$1`,
-      [rows[0].funcionario_id]
-    );
-
-    // Evento de reset de senha
-    try {
-      await publishEvent('auth.password_reset', { userId: rows[0].funcionario_id, email });
-    } catch (e) {
-      console.error('[auth-service] falha publicando auth.password_reset', (e as Error).message);
-    }
-
-  res.status(200).json({ mensagem: 'Senha redefinida com sucesso' });
-  });
 };
