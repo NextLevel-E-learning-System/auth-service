@@ -3,7 +3,6 @@ import bcrypt from 'bcryptjs';
 import jwt from "jsonwebtoken";
 import { createHash } from 'crypto';
 import { withClient } from "../config/db.js";
-import { publishEvent } from "../config/rabbitmq.js";
 
 interface UserData {
   id: string;
@@ -116,13 +115,6 @@ export const login = async (req: Request, res: Response) => {
        VALUES ($1,$2,$3)`,
       [user.funcionario_id, req.ip, req.headers["user-agent"]]
     );
-
-    // Publicar evento de login
-    try {
-      await publishEvent('auth.login', { userId: user.funcionario_id, email: user.email });
-    } catch (e) {
-      console.error('[auth-service] falha publicando auth.login', (e as Error).message);
-    }
 
     // Configurar cookies HTTP-only
     const origin = req.headers.origin || '';
@@ -279,13 +271,6 @@ export const logout = async (req: Request, res: Response) => {
         `UPDATE auth_service.tokens SET ativo=false WHERE funcionario_id=$1 AND tipo_token='ACCESS' AND ativo=true`,
         [decoded.sub]
       );
-      
-      // Registrar evento com aggregate_id = usuário real
-      try {
-        await publishEvent('auth.logout', { userId: decoded.sub, refreshToken });
-      } catch (e) {
-        console.error('[auth-service] falha publicando auth.logout', (e as Error).message);
-      }
       
       // Limpar cookies
       res.clearCookie('accessToken', { path: '/' });
