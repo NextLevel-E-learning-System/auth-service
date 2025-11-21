@@ -13,3 +13,5 @@ logs/
 
 # Sistema operacional
 .DS_Store
+.vscode/
+!.vscode/extensions.json
