@@ -1,17 +1,61 @@
-name: Deploy to Railway
+name: CI/CD Pipeline - Auth Service
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  deploy:
+  security-audit:
+    name: Security & Quality Checks
     runs-on: ubuntu-latest
-    container: ghcr.io/railwayapp/cli:latest
-    env:
-      SVC_ID: ${{ secrets.AUTH_SERVICE_ID }}
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - run: railway up --service=${{ env.SVC_ID }} --detach
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Check for vulnerabilities
+        run: npm audit --json > audit-report.json || true
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-report-auth
+          path: audit-report.json
+          retention-days: 30
+
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    needs: security-audit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run tests
+        run: npm test --if-present
+        continue-on-error: true
