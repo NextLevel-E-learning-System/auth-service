@@ -1,0 +1,22 @@
+FROM node:22-alpine3.20
+
+# Instalar Git e outras ferramentas úteis
+RUN apk add --no-cache git
+
+# Definir diretório de trabalho
+WORKDIR /app
+
+# Copiar arquivos de dependências
+COPY package*.json ./
+
+# Instalar dependências
+RUN npm install
+
+# Copiar código fonte
+COPY . .
+
+# Expor porta do serviço
+EXPOSE 3333
+
+# Comando para desenvolvimento com hot reload
+CMD ["npm", "run", "dev"]
