@@ -1,24 +1,27 @@
-import { Request, Response } from 'express'
-import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
-import { createHash } from 'crypto'
-import { withClient } from '../config/db.js'
+import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { createHash } from "crypto";
+import { withClient } from "../config/db.js";
 
 interface UserData {
-  id: string
-  email: string
-  ativo: boolean
-  roles: string // Single role, not array
+  id: string;
+  email: string;
+  ativo: boolean;
+  roles: string; // Single role, not array
 }
 
 function buildSigningKey() {
-  const secret = process.env.JWT_SECRET || 'dev-secret'
-  return createHash('sha256').update(secret).digest()
+  const secret = process.env.JWT_SECRET || "dev-secret";
+  return createHash("sha256").update(secret).digest();
 }
 
 function genAccessToken(user: UserData) {
-  const accessExpHours = parseInt(process.env.ACCESS_TOKEN_EXP_HOURS || '8', 10)
-  const key = buildSigningKey()
+  const accessExpHours = parseInt(
+    process.env.ACCESS_TOKEN_EXP_HOURS || "8",
+    10
+  );
+  const key = buildSigningKey();
 
   // Payload com informações essenciais do usuário
   const payload = {
@@ -26,17 +29,20 @@ function genAccessToken(user: UserData) {
     email: user.email,
     ativo: user.ativo,
     roles: user.roles,
-    type: 'access',
-  }
+    type: "access",
+  };
 
-  const token = jwt.sign(payload, key, { expiresIn: `${accessExpHours}h` })
-  const expiresAt = new Date(Date.now() + accessExpHours * 60 * 60 * 1000)
-  return { token, expiresAt, accessExpHours }
+  const token = jwt.sign(payload, key, { expiresIn: `${accessExpHours}h` });
+  const expiresAt = new Date(Date.now() + accessExpHours * 60 * 60 * 1000);
+  return { token, expiresAt, accessExpHours };
 }
 
 function genRefreshToken(user: UserData) {
-  const refreshExpHours = parseInt(process.env.REFRESH_TOKEN_EXP_HOURS || '24', 10)
-  const key = buildSigningKey()
+  const refreshExpHours = parseInt(
+    process.env.REFRESH_TOKEN_EXP_HOURS || "24",
+    10
+  );
+  const key = buildSigningKey();
 
   // Para refresh token, incluir apenas informações essenciais
   const payload = {
@@ -44,41 +50,40 @@ function genRefreshToken(user: UserData) {
     email: user.email,
     ativo: user.ativo,
     roles: user.roles,
-    type: 'refresh',
-  }
+    type: "refresh",
+  };
 
-  const token = jwt.sign(payload, key, { expiresIn: `${refreshExpHours}h` })
-  const expiresAt = new Date(Date.now() + refreshExpHours * 60 * 60 * 1000)
-  return { token, expiresAt, refreshExpHours }
+  const token = jwt.sign(payload, key, { expiresIn: `${refreshExpHours}h` });
+  const expiresAt = new Date(Date.now() + refreshExpHours * 60 * 60 * 1000);
+  return { token, expiresAt, refreshExpHours };
 }
 
 function hash(value: string) {
-  return createHash('sha256').update(value).digest('hex')
+  return createHash("sha256").update(value).digest("hex");
 }
 
-// Detectar se é localhost para configurar cookies corretamente
-function isLocalhost(req: Request): boolean {
-  const origin = req.headers.origin || ''
-  return origin.includes('localhost') || origin.includes('127.0.0.1')
-}
+function setPartitionedCookie(
+  res: Response,
+  name: string,
+  value: string,
+  maxAgeMs: number
+) {
+  const maxAgeSec = Math.floor(maxAgeMs / 1000);
+  const expires = new Date(Date.now() + maxAgeMs).toUTCString();
 
-// Configuração de cookies adaptativa
-function getCookieOptions(req: Request, maxAgeMs: number) {
-  const isLocal = isLocalhost(req)
+  // Criar header Set-Cookie manualmente com Partitioned
+  const cookieValue = `${name}=${value}; Max-Age=${maxAgeSec}; Path=/; Expires=${expires}; HttpOnly; Secure; SameSite=None; Partitioned`;
 
-  return {
-    httpOnly: true,
-    secure: true, // HTTPS sempre (necessário para sameSite=none)
-    sameSite: isLocal ? ('lax' as const) : ('none' as const), // lax para localhost, none para cross-origin
-    path: '/',
-    maxAge: maxAgeMs,
-  }
+  // Adicionar ao header (pode ter múltiplos Set-Cookie)
+  const existing = res.getHeader("Set-Cookie") || [];
+  const cookies = Array.isArray(existing) ? existing : [String(existing)];
+  res.setHeader("Set-Cookie", [...cookies, cookieValue]);
 }
 
 export const login = async (req: Request, res: Response) => {
-  const { email, senha } = req.body
+  const { email, senha } = req.body;
 
-  await withClient(async c => {
+  await withClient(async (c) => {
     // Buscar usuário com informações completas incluindo dados do funcionário
     const { rows } = await c.query(
       `SELECT u.funcionario_id, u.email, u.ativo, u.senha_hash,
@@ -87,20 +92,22 @@ export const login = async (req: Request, res: Response) => {
        LEFT JOIN user_service.funcionarios f ON u.funcionario_id = f.id AND f.ativo = true
        WHERE u.email = $1 AND u.ativo = true`,
       [email]
-    )
+    );
 
-    const user = rows[0]
+    const user = rows[0];
     if (!user) {
-      return res
-        .status(401)
-        .json({ erro: 'credenciais_invalidas', mensagem: 'Credenciais inválidas' })
+      return res.status(401).json({
+        erro: "credenciais_invalidas",
+        mensagem: "Credenciais inválidas",
+      });
     }
 
-    const valid = await bcrypt.compare(senha, user.senha_hash)
+    const valid = await bcrypt.compare(senha, user.senha_hash);
     if (!valid) {
-      return res
-        .status(401)
-        .json({ erro: 'credenciais_invalidas', mensagem: 'Credenciais inválidas' })
+      return res.status(401).json({
+        erro: "credenciais_invalidas",
+        mensagem: "Credenciais inválidas",
+      });
     }
 
     const userData = {
@@ -108,52 +115,59 @@ export const login = async (req: Request, res: Response) => {
       email: user.email,
       ativo: user.ativo,
       roles: user.role,
-    }
+    };
 
     // Gerar tokens com informações completas
     const {
       token: accessToken,
       expiresAt: accessExpiresAt,
       accessExpHours,
-    } = genAccessToken(userData)
-    const { token: refreshToken, expiresAt: refreshExpiresAt } = genRefreshToken(userData)
+    } = genAccessToken(userData);
+    const { token: refreshToken, expiresAt: refreshExpiresAt } =
+      genRefreshToken(userData);
 
     // Armazenar tokens no banco
     await c.query(
       `INSERT INTO auth_service.tokens(token_jwt, funcionario_id, tipo_token, data_expiracao)
        VALUES ($1,$2,'ACCESS', $3)`,
       [accessToken, user.funcionario_id, accessExpiresAt]
-    )
+    );
 
     await c.query(
       `INSERT INTO auth_service.tokens(token_jwt, funcionario_id, tipo_token, data_expiracao)
        VALUES ($1,$2,'REFRESH', $3)`,
       [hash(refreshToken), user.funcionario_id, refreshExpiresAt]
-    )
+    );
 
     // Log de acesso
     await c.query(
       `UPDATE auth_service.usuarios SET ultimo_acesso = NOW() WHERE funcionario_id = $1`,
       [user.funcionario_id]
-    )
+    );
 
     await c.query(
       `INSERT INTO auth_service.logs_acesso(funcionario_id, ip, user_agent)
        VALUES ($1,$2,$3)`,
-      [user.funcionario_id, req.ip, req.headers['user-agent']]
-    )
+      [user.funcionario_id, req.ip, req.headers["user-agent"]]
+    );
 
-    // Configurar cookies adaptáveis: lax para localhost HTTPS, none para cross-origin Railway
-    const accessCookieOptions = getCookieOptions(req, accessExpHours * 60 * 60 * 1000)
-    const refreshCookieOptions = getCookieOptions(req, 7 * 24 * 60 * 60 * 1000) // 7 dias
-
-    // Setar cookies
-    res.cookie('accessToken', accessToken, accessCookieOptions)
-    res.cookie('refreshToken', refreshToken, refreshCookieOptions)
+    // Setar cookies com Partitioned para cross-site (CHIPS)
+    setPartitionedCookie(
+      res,
+      "accessToken",
+      accessToken,
+      accessExpHours * 60 * 60 * 1000
+    );
+    setPartitionedCookie(
+      res,
+      "refreshToken",
+      refreshToken,
+      7 * 24 * 60 * 60 * 1000
+    );
 
     // Retornar resposta SEM os tokens (eles estão nos cookies)
     res.status(200).json({
-      mensagem: 'Login realizado com sucesso',
+      mensagem: "Login realizado com sucesso",
       usuario: {
         id: user.funcionario_id,
         nome: user.nome,
@@ -164,44 +178,45 @@ export const login = async (req: Request, res: Response) => {
         nivel: user.nivel,
         role: user.role,
       },
-    })
-  })
-}
+    });
+  });
+};
 
 export const refresh = async (req: Request, res: Response) => {
   // Buscar refresh token do cookie ao invés do body
-  const refreshToken = req.cookies?.refreshToken
+  const refreshToken = req.cookies?.refreshToken;
 
   if (!refreshToken) {
     return res.status(401).json({
-      erro: 'refresh_token_ausente',
-      mensagem: 'Refresh token não encontrado',
-    })
+      erro: "refresh_token_ausente",
+      mensagem: "Refresh token não encontrado",
+    });
   }
 
   try {
-    const key = buildSigningKey()
+    const key = buildSigningKey();
     const decoded = jwt.verify(refreshToken, key) as {
-      sub: string
-      email: string
-      status: string
-      roles: string
-      iat: number
-      exp: number
-    }
+      sub: string;
+      email: string;
+      status: string;
+      roles: string;
+      iat: number;
+      exp: number;
+    };
 
-    await withClient(async c => {
+    await withClient(async (c) => {
       // Verificar se o refresh token hasheado existe e está ativo
       const { rows } = await c.query(
         `SELECT * FROM auth_service.tokens 
          WHERE token_jwt=$1 AND ativo=true AND tipo_token='REFRESH' AND data_expiracao > NOW()`,
         [hash(refreshToken)]
-      )
+      );
 
       if (!rows[0]) {
-        return res
-          .status(401)
-          .json({ erro: 'refresh_token_invalido', mensagem: 'Refresh token inválido' })
+        return res.status(401).json({
+          erro: "refresh_token_invalido",
+          mensagem: "Refresh token inválido",
+        });
       }
 
       // Buscar dados atualizados do usuário para o novo token
@@ -212,13 +227,14 @@ export const refresh = async (req: Request, res: Response) => {
          LEFT JOIN user_service.funcionarios f ON u.funcionario_id = f.id AND f.ativo = true
          WHERE u.funcionario_id = $1 AND u.ativo = true`,
         [decoded.sub]
-      )
+      );
 
-      const user = userRows[0]
+      const user = userRows[0];
       if (!user) {
-        return res
-          .status(401)
-          .json({ erro: 'usuario_nao_encontrado', mensagem: 'Usuário não encontrado' })
+        return res.status(401).json({
+          erro: "usuario_nao_encontrado",
+          mensagem: "Usuário não encontrado",
+        });
       }
 
       const userData: UserData = {
@@ -226,75 +242,89 @@ export const refresh = async (req: Request, res: Response) => {
         email: user.email,
         ativo: user.ativo,
         roles: user.role,
-      }
+      };
 
       // Gerar novo access token
-      const { token: newAccessToken, expiresAt: accessExpiresAt } = genAccessToken(userData)
+      const { token: newAccessToken, expiresAt: accessExpiresAt } =
+        genAccessToken(userData);
 
       // Armazenar novo access token
       await c.query(
         `INSERT INTO auth_service.tokens(token_jwt, funcionario_id, tipo_token, data_expiracao)
          VALUES ($1,$2,'ACCESS', $3)`,
         [newAccessToken, decoded.sub, accessExpiresAt]
-      )
+      );
 
-      // Atualizar cookie do access token
-      const accessExpHours = parseInt(process.env.ACCESS_TOKEN_EXP_HOURS || '8', 10)
-      const accessCookieOptions = getCookieOptions(req, accessExpHours * 60 * 60 * 1000)
-      res.cookie('accessToken', newAccessToken, accessCookieOptions)
+      // Atualizar cookie do access token com Partitioned
+      const accessExpHours = parseInt(
+        process.env.ACCESS_TOKEN_EXP_HOURS || "8",
+        10
+      );
+      setPartitionedCookie(
+        res,
+        "accessToken",
+        newAccessToken,
+        accessExpHours * 60 * 60 * 1000
+      );
 
-      res.status(200).json({ mensagem: 'Token renovado com sucesso' })
-    })
+      res.status(200).json({ mensagem: "Token renovado com sucesso" });
+    });
   } catch (error) {
-    console.error('[auth-service] Erro no refresh:', error)
-    res.status(401).json({ erro: 'token_invalido', mensagem: 'Token inválido ou expirado' })
+    console.error("[auth-service] Erro no refresh:", error);
+    res
+      .status(401)
+      .json({ erro: "token_invalido", mensagem: "Token inválido ou expirado" });
   }
-}
+};
 
 export const logout = async (req: Request, res: Response) => {
   // Buscar refresh token do cookie
-  const refreshToken = req.cookies?.refreshToken
+  const refreshToken = req.cookies?.refreshToken;
 
   if (!refreshToken) {
     return res.status(400).json({
-      erro: 'refresh_token_obrigatorio',
-      mensagem: 'Refresh token é obrigatório',
-    })
+      erro: "refresh_token_obrigatorio",
+      mensagem: "Refresh token é obrigatório",
+    });
   }
 
   try {
-    const key = buildSigningKey()
-    const decoded = jwt.verify(refreshToken, key) as { sub: string }
+    const key = buildSigningKey();
+    const decoded = jwt.verify(refreshToken, key) as { sub: string };
 
-    await withClient(async c => {
+    await withClient(async (c) => {
       // Invalidar especificamente o refresh token recebido (hasheado)
       await c.query(
         `UPDATE auth_service.tokens SET ativo=false WHERE token_jwt=$1 AND tipo_token='REFRESH'`,
         [hash(refreshToken)]
-      )
+      );
 
       // Invalidar todos os access tokens ativos do usuário (revogação)
       await c.query(
         `UPDATE auth_service.tokens SET ativo=false WHERE funcionario_id=$1 AND tipo_token='ACCESS' AND ativo=true`,
         [decoded.sub]
-      )
+      );
 
-      // Limpar cookies com as mesmas opções usadas no set
-      const clearOptions = getCookieOptions(req, 0)
-      res.clearCookie('accessToken', clearOptions)
-      res.clearCookie('refreshToken', clearOptions)
+      // Limpar cookies - setar com Max-Age=0
+      res.setHeader("Set-Cookie", [
+        "accessToken=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None; Partitioned",
+        "refreshToken=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None; Partitioned",
+      ]);
 
-      res.status(200).json({ mensagem: 'Logout realizado com sucesso' })
-    })
+      res.status(200).json({ mensagem: "Logout realizado com sucesso" });
+    });
   } catch (error) {
-    console.error('[auth-service] Erro no logout:', error)
+    console.error("[auth-service] Erro no logout:", error);
 
     // Mesmo com erro, limpar cookies
-    res.clearCookie('accessToken', { path: '/' })
-    res.clearCookie('refreshToken', { path: '/' })
+    res.setHeader("Set-Cookie", [
+      "accessToken=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None; Partitioned",
+      "refreshToken=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None; Partitioned",
+    ]);
 
-    return res
-      .status(401)
-      .json({ erro: 'refresh_token_invalido', mensagem: 'Refresh token inválido' })
+    return res.status(401).json({
+      erro: "refresh_token_invalido",
+      mensagem: "Refresh token inválido",
+    });
   }
-}
+};
